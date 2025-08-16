@@ -1,0 +1,31 @@
+spring:
+  datasource:
+    url: jdbc:oracle:thin:@//localhost:1521/XEPDB1
+    username: amit
+    password: Welcome123
+    driver-class-name: oracle.jdbc.OracleDriver
+  jpa:
+    hibernate:
+      ddl-auto: none
+    database-platform: org.hibernate.dialect.OracleDialect
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.OracleDialect
+  
+aws:
+  kms:
+    key-id: arn:aws:kms:ap-south-1:538143631035:key/a7c5a1f1-ce1a-4348-acbe-5c150201cb9b
+  region: ap-south-1
+
+server:
+  port: 8088
+
+tokenization:
+  # Base64-encoded 32-byte HMAC key for deterministic tokenization
+  hmacKeyBase64: "uN2gH9JcA3rJq1k1yYt7sN1T2r8Qm4XczE+0Jb9G6Hc="
+  # Short-lived cache for decrypted data keys (to reduce KMS calls).
+  # Keep TTL small and size bounded to limit exposure of plaintext keys in memory.
+  kms:
+    cache:
+      ttlSeconds: 30   # default TTL for cached plaintext keys
+      maxSize: 100     # max number of cached entries

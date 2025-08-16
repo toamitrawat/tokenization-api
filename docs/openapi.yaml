@@ -1,0 +1,102 @@
+openapi: 3.0.3
+info:
+  title: Tokenization API
+  version: 1.0.0
+  description: Deterministic credit-card tokenization and detokenization.
+servers:
+  - url: http://localhost:8088
+paths:
+  /api/tokenize:
+    post:
+      summary: Tokenize a credit card number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenizeRequest'
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location:
+              description: Detokenize link
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenizeResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/detokenize:
+    get:
+      summary: Detokenize a token back to PAN
+      parameters:
+        - in: query
+          name: token
+          required: true
+          schema:
+            type: string
+            pattern: '^9\\d{15}$'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetokenizeResponse'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  schemas:
+    TokenizeRequest:
+      type: object
+      required: [ccNumber]
+      properties:
+        ccNumber:
+          type: string
+          pattern: '^\\d{16}$'
+          description: 16-digit credit card number
+    TokenizeResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          pattern: '^9\\d{15}$'
+          description: 16-digit token starting with 9
+    DetokenizeResponse:
+      type: object
+      properties:
+        ccNumber:
+          type: string
+          pattern: '^\\d{16}$'
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+    ValidationError:
+      type: object
+      additionalProperties:
+        type: string

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <!--
+    Observability: Structured JSON logging for Filebeat/ELK.
+    - Console uses a composite JSON encoder with standard providers.
+    - File appender rotates daily and at 10MB per file, keeps 7 days.
+    - To add correlation IDs, populate MDC (e.g., key "traceId") in a filter; MDC is emitted automatically.
+  -->
+  <property name="APP_NAME" value="tokenization-service"/>
+  <property name="LOG_PATH" value="logs"/>
+
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+      <providers>
+        <timestamp/>
+        <logLevel/>
+        <threadName/>
+        <loggerName/>
+        <message/>
+        <mdc/>
+        <stackTrace/>
+        <!-- Add static application field -->
+        <pattern>
+          <pattern>{"app":"${APP_NAME}"}</pattern>
+        </pattern>
+      </providers>
+    </encoder>
+  </appender>
+
+  <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>${LOG_PATH}/${APP_NAME}.json</file>
+    <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+    <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+      <fileNamePattern>${LOG_PATH}/${APP_NAME}-%d{yyyy-MM-dd}.%i.json.gz</fileNamePattern>
+      <maxFileSize>10MB</maxFileSize>
+      <maxHistory>7</maxHistory>
+    </rollingPolicy>
+  </appender>
+
+  <logger name="org.springframework" level="INFO"/>
+  <logger name="org.hibernate" level="WARN"/>
+
+  <root level="INFO">
+    <appender-ref ref="CONSOLE"/>
+    <appender-ref ref="FILE"/>
+  </root>
+</configuration>
