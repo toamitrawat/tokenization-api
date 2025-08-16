@@ -1,0 +1,2 @@
+[rolesanywhere]
+credential_process = aws_signing_helper credential-process --certificate /aws-ra/client.pem --private-key /aws-ra/client.key --trust-anchor-arn arn:aws:rolesanywhere:ap-south-1:538143631035:trust-anchor/d1614aae-d085-4041-8e0e-fd72329dcb43 --profile-arn arn:aws:rolesanywhere:ap-south-1:538143631035:profile/36b86f37-e4e9-4f38-9c4e-8baf9d9b1c29 --role-arn arn:aws:iam::538143631035:role/OnPremKMSAccessRole

@@ -1,0 +1,22 @@
+# Build output
+/target
+
+# VCS and IDE
+.git
+.gitignore
+/.idea
+/.vscode
+
+# Maven wrapper and caches
+.mvn/
+mvnw
+mvnw.cmd
+
+# Logs and temp
+/logs
+*.log
+.tmp/
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -127,12 +127,51 @@ java -jar target/tokenization-api-*.jar
 
 ## Docker (example)
 
-Example Dockerfile (not included by default):
+Docker Desktop quick start (compose)
+
+1) Build images and start Oracle XE + app:
+
+```powershell
+docker compose up -d --build
+```
+
+2) Check logs:
+
+```powershell
+docker compose logs -f app
+```
+
+3) Test endpoints:
+
+```powershell
+curl -X POST 'http://localhost:8088/api/tokenize' `
+		-H 'Content-Type: application/json' `
+		-d '{"ccNumber":"4111111111111111"}'
+
+curl -X GET 'http://localhost:8088/api/detokenize?token=9XXXXXXXXXXXXXXXX'
+```
+
+Environment overrides (examples):
+
+```powershell
+docker compose up -d --build `
+	--env-file .env
+```
+
+Or inline per-run overrides in docker-compose.yml under the app service (SPRING_DATASOURCE_URL, AWS_REGION, AWS_KMS_KEY_ID, TOKENIZATION_HMAC_KEY_BASE64, etc.).
+
+Tear down:
+
+```powershell
+docker compose down -v
+```
+
+Standalone Dockerfile build (without compose):
 
 ```dockerfile
 FROM eclipse-temurin:21-jre
-ARG JAR_FILE=target/tokenization-api-*.jar
-COPY ${JAR_FILE} app.jar
+ARG JAR_FILE=target/tokenization-service-0.0.1-SNAPSHOT.jar
+COPY ${JAR_FILE} /app.jar
 ENV JAVA_OPTS=""
 EXPOSE 8088
 ENTRYPOINT ["sh","-c","java $JAVA_OPTS -jar /app.jar"]
@@ -143,7 +182,11 @@ Build & run
 docker build -t tokenization-api .
 docker run --rm -p 8088:8088 `
 	-e AWS_REGION=ap-south-1 `
-	-e AWS_PROFILE=rolesanywhere `
+	-e AWS_KMS_KEY_ID=arn:aws:kms:ap-south-1:538143631035:key/a7c5a1f1-ce1a-4348-acbe-5c150201cb9b `
+	-e TOKENIZATION_HMAC_KEY_BASE64="<Base64-Encoded-32-Byte-Key>" `
+	-e SPRING_DATASOURCE_URL=jdbc:oracle:thin:@//host.docker.internal:1521/XEPDB1 `
+	-e SPRING_DATASOURCE_USERNAME=amit `
+	-e SPRING_DATASOURCE_PASSWORD=Welcome123 `
 	-v "$HOME/.aws:/root/.aws:ro" `
 	tokenization-api
 ```
