@@ -22,6 +22,8 @@ This service is configured primarily via `src/main/resources/application.yml`. A
 
 ### Tokenization
 - `tokenization.hmacKeyBase64` (required): Base64-encoded HMAC key used for deterministic tokenization and panHash. Keep secret and rotate per policy.
+- `tokenization.kms.cache.maxSize` (optional): Maximum number of cached decrypted data keys (default: 100).
+- `tokenization.kms.cache.ttlSeconds` (optional): Cache TTL in seconds for decrypted data keys (default: 30).
 
 ### Flyway
 - `spring.flyway.enabled`: `false` by default. Enable if you want automatic DB migrations.
@@ -51,6 +53,10 @@ aws:
 # Base64 for 32 bytes (example only; do not use in prod)
 tokenization:
   hmacKeyBase64: bXktc3VwZXItc2VjcmV0LWhtYWMta2V5LWFzZS1iYXNlNjQ=
+  kms:
+    cache:
+      maxSize: 100
+      ttlSeconds: 30
 ```
 
 ## Environment overrides (PowerShell)

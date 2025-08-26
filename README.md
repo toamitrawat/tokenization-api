@@ -36,7 +36,9 @@ Determinism is achieved using an HMAC-SHA256-based panHash for lookups and token
 - Validation (Jakarta), Logging (Logback + logstash JSON encoder)
 
 Key components
-- `TokenizationService`: Orchestrates deterministic tokenization, KMS data key generation/decryption, AES-GCM encrypt/decrypt, persistence, logging.
+- `TokenizationService`: Orchestrates deterministic tokenization, AES-GCM encrypt/decrypt, persistence, logging.
+- `KmsDataKeyService`: Manages AWS KMS operations with caching - generates new data keys and decrypts existing ones.
+- `DataKeyCache`: Short-lived cache for decrypted data keys to reduce KMS calls (bounded size and TTL).
 - `TokenDerivationService`: HMAC-SHA256 panHash + token derivation (tokens start with `9`).
 - `CardToken` entity: Stores token, panHash, encrypted PAN, nonce, encrypted data key, collision counter.
 - `TokenController`: REST API with request/response DTOs and appropriate status codes.
@@ -46,12 +48,12 @@ Key components
 Data flow (tokenize)
 1) Validate input (16 digits).
 2) Compute HMAC panHash from PAN; lookup existing token by panHash.
-3) If not found: KMS GenerateDataKey → AES-GCM encrypt PAN → generate deterministic token from panHash (+ collision counter if needed) → persist.
+3) If not found: KmsDataKeyService generates new data key from KMS → AES-GCM encrypt PAN → generate deterministic token from panHash (+ collision counter if needed) → persist.
 4) Return token with 201 Created.
 
 Data flow (detokenize)
 1) Lookup by token.
-2) KMS Decrypt data key → AES-GCM decrypt PAN → return PAN with 200 OK.
+2) KmsDataKeyService decrypts data key (with caching) → AES-GCM decrypt PAN → return PAN with 200 OK.
 
 ## API
 
@@ -94,6 +96,8 @@ Main settings in `src/main/resources/application.yml`:
 	- `aws.profile` (optional): named profile for credentials
 - Tokenization
 	- `tokenization.hmacKeyBase64`: Base64-encoded HMAC key (keep secret; rotate per policy)
+	- `tokenization.kms.cache.maxSize`: Maximum cached data keys (default: 100)
+	- `tokenization.kms.cache.ttlSeconds`: Cache TTL in seconds (default: 30)
 - Flyway
 	- `spring.flyway.enabled=false` (migrations disabled by default)
 
@@ -208,11 +212,43 @@ Configure DB via env vars or a mounted `application.yml` volume as needed.
 - Internal failures → 500 `{ "error": "..." }`.
 - Consider mapping DB connectivity to 503 (Service Unavailable) as a future enhancement.
 
+## KMS Data Key Caching
+
+To optimize performance and reduce KMS costs, the service implements intelligent data key caching:
+
+### How it works
+- **Cache scope**: Decrypted data keys are cached using their Base64-encoded encrypted data key as the cache key
+- **Cache behavior**: 
+  - **Hit**: Returns cached plaintext data key (avoids KMS decrypt call)
+  - **Miss**: Calls KMS decrypt, then caches the result
+- **Security**: Cache has bounded size (100 entries) and short TTL (30 seconds) to limit exposure
+- **Memory safety**: Plaintext keys are zeroed after use
+
+### Configuration
+```yaml
+tokenization:
+  kms:
+    cache:
+      maxSize: 100        # Maximum cached entries
+      ttlSeconds: 30      # Time-to-live in seconds
+```
+
+### Performance impact
+- **Without cache**: Every detokenization = 1 KMS decrypt call (~50-200ms)
+- **With cache**: Repeated detokenizations of recent tokens use cached keys
+- **Cost**: Reduces KMS decrypt API calls and associated charges
+
+### Trade-offs
+- **Security**: Each tokenization still generates unique data keys per PAN (no key reuse)
+- **Performance**: Detokenization becomes much faster for recently used tokens
+- **Memory**: Small, bounded cache footprint with automatic expiration
+
 ## Security considerations
 
 - Secrets: Keep `tokenization.hmacKeyBase64` confidential; rotate periodically.
 - Keys: AWS KMS manages data keys; ensure IAM policies restrict access.
 - Crypto: AES/GCM with unique 12-byte IV per encryption; ciphertext and encrypted data key are stored.
+- Caching: Decrypted data keys are cached short-term (30s) with bounded size; plaintext keys zeroed after use.
 - Logging: Never log raw PAN; code logs last 4 only.
 - Validation: Enforced 16-digit PAN input prevents malformed data.
 

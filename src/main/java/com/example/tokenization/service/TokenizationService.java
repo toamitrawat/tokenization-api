@@ -1,6 +1,5 @@
 package com.example.tokenization.service;
 
-import com.example.tokenization.config.AwsKmsConfig;
 import com.example.tokenization.entity.CardToken;
 import com.example.tokenization.repository.CardTokenRepository;
 import com.example.tokenization.exception.TokenNotFoundException;
@@ -9,12 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.example.tokenization.crypto.TokenDerivationService;
-import com.example.tokenization.kms.DataKeyCache;
-import software.amazon.awssdk.core.SdkBytes;
-import software.amazon.awssdk.services.kms.KmsClient;
-import software.amazon.awssdk.services.kms.model.DecryptRequest;
-import software.amazon.awssdk.services.kms.model.GenerateDataKeyRequest;
-import software.amazon.awssdk.services.kms.model.GenerateDataKeyResponse;
+import com.example.tokenization.kms.KmsDataKeyService;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
@@ -30,10 +24,7 @@ import java.util.Optional;
 public class TokenizationService {
 
     @Autowired
-    private KmsClient kmsClient;
-
-    @Autowired
-    private AwsKmsConfig awsKmsConfig;
+    private KmsDataKeyService kmsDataKeyService;
 
     @Autowired
     private CardTokenRepository repository;
@@ -44,9 +35,6 @@ public class TokenizationService {
     
     @Autowired
     private TokenDerivationService tokenDerivationService;
-
-    @Autowired
-    private DataKeyCache dataKeyCache;
 
     /**
      * Tokenizes the provided PAN, generating or reusing a deterministic token.
@@ -71,13 +59,9 @@ public class TokenizationService {
             }
 
             // KMS interaction is a key external dependency; consider timing and tagging these calls for metrics.
-            GenerateDataKeyResponse dataKeyResponse = kmsClient.generateDataKey(GenerateDataKeyRequest.builder()
-                    .keyId(awsKmsConfig.getKeyId())
-                    .keySpec("AES_256")
-                    .build());
-
-            byte[] plainDataKey = dataKeyResponse.plaintext().asByteArray();
-            byte[] encryptedDataKey = dataKeyResponse.ciphertextBlob().asByteArray();
+            KmsDataKeyService.DataKeyPair dataKeyPair = kmsDataKeyService.generateAndExtractDataKey();
+            byte[] plainDataKey = dataKeyPair.getPlainDataKey();
+            byte[] encryptedDataKey = dataKeyPair.getEncryptedDataKey();
 
             try {
                 int attempts = 0;
@@ -127,7 +111,7 @@ public class TokenizationService {
                 log.error("Too many token collisions");
                 throw new TokenizationException("Too many token collisions");
             } finally {
-                Arrays.fill(plainDataKey, (byte)0);
+                dataKeyPair.clearPlainDataKey();
             }
         } catch (Exception ex) {
         String last4 = last4(pan);
@@ -147,15 +131,7 @@ public class TokenizationService {
             CardToken ct = opt.get();
 
             byte[] encryptedDataKey = ct.getEncryptedDataKey();
-            String cacheKey = java.util.Base64.getEncoder().encodeToString(encryptedDataKey);
-            byte[] plainDataKey = dataKeyCache.get(cacheKey);
-            if (plainDataKey == null) {
-                plainDataKey = kmsClient.decrypt(DecryptRequest.builder()
-                        .ciphertextBlob(SdkBytes.fromByteArray(encryptedDataKey))
-                        .build()).plaintext().asByteArray();
-                // cache short-lived copy; caller will zero its working copy on finally
-                dataKeyCache.put(cacheKey, Arrays.copyOf(plainDataKey, plainDataKey.length));
-            }
+            byte[] plainDataKey = kmsDataKeyService.decryptDataKey(encryptedDataKey);
 
             try {
                 Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
