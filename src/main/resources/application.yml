@@ -16,6 +16,7 @@ aws:
   kms:
     key-id: arn:aws:kms:ap-south-1:538143631035:key/a7c5a1f1-ce1a-4348-acbe-5c150201cb9b
   region: ap-south-1
+  profile: rolesanywhere
 
 server:
   port: 8088
