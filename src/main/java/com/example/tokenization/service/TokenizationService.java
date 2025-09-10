@@ -108,7 +108,6 @@ public class TokenizationService {
                     ct.setEncryptedCcNumber(ciphertext);
                     ct.setNonce(iv);
                     ct.setEncryptedDataKey(encryptedDataKey);
-                    ct.setAad(null);
                     repository.save(ct);
                     // Success path: minimal, PII-safe log line.
             log.info("Token created successfully for CC ending {}", last4);

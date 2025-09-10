@@ -44,14 +44,6 @@ public class CardToken {
     @Column(name = "ENCRYPTED_DATA_KEY", nullable = false)
     private byte[] encryptedDataKey;
 
-    // Optional Additional Authenticated Data used in AEAD (not used currently)
-    @Lob
-    @Column(name = "AAD")
-    private String aad;
-
-    @Column(name = "MERCHANT_ID")
-    private String merchantId;
-
     @Column(name = "CREATED_AT")
     private OffsetDateTime createdAt;
 
