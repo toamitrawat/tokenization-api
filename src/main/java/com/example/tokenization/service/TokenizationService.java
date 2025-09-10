@@ -9,7 +9,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.example.tokenization.crypto.TokenDerivationService;
-import com.example.tokenization.kms.DataKeyCache;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.kms.KmsClient;
 import software.amazon.awssdk.services.kms.model.DecryptRequest;
@@ -44,9 +43,6 @@ public class TokenizationService {
     
     @Autowired
     private TokenDerivationService tokenDerivationService;
-
-    @Autowired
-    private DataKeyCache dataKeyCache;
 
     /**
      * Tokenizes the provided PAN, generating or reusing a deterministic token.
@@ -147,15 +143,9 @@ public class TokenizationService {
             CardToken ct = opt.get();
 
             byte[] encryptedDataKey = ct.getEncryptedDataKey();
-            String cacheKey = java.util.Base64.getEncoder().encodeToString(encryptedDataKey);
-            byte[] plainDataKey = dataKeyCache.get(cacheKey);
-            if (plainDataKey == null) {
-                plainDataKey = kmsClient.decrypt(DecryptRequest.builder()
-                        .ciphertextBlob(SdkBytes.fromByteArray(encryptedDataKey))
-                        .build()).plaintext().asByteArray();
-                // cache short-lived copy; caller will zero its working copy on finally
-                dataKeyCache.put(cacheKey, Arrays.copyOf(plainDataKey, plainDataKey.length));
-            }
+            byte[] plainDataKey = kmsClient.decrypt(DecryptRequest.builder()
+                    .ciphertextBlob(SdkBytes.fromByteArray(encryptedDataKey))
+                    .build()).plaintext().asByteArray();
 
             try {
                 Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");

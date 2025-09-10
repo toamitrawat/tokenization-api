@@ -26,6 +26,7 @@
     </dependencyManagement>
 
     <dependencies>
+
         <!-- Spring Boot -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -53,13 +54,6 @@
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>kms</artifactId>
             <version>${aws.sdk.version}</version>
-        </dependency>
-
-        <!-- In-memory cache for KMS plaintext data keys (short-lived) -->
-        <dependency>
-            <groupId>com.github.ben-manes.caffeine</groupId>
-            <artifactId>caffeine</artifactId>
-            <version>3.1.8</version>
         </dependency>
 
         <!-- Lombok (optional) -->

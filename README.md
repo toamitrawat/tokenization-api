@@ -156,7 +156,6 @@ Configure DB via env vars or a mounted `application.yml` volume as needed.
 - Rotation: daily and at 10MB per file; 7 days retained.
 - PII: Only the last 4 digits of PAN are ever logged; never log the full PAN.
 - Correlation IDs: Add a servlet filter to populate MDC (e.g., `traceId`), automatically included in logs.
-- Next: Add Spring Boot Actuator + Micrometer, and optionally OpenTelemetry for traces (KMS + JDBC).
 
 ## Error handling
 
@@ -183,7 +182,6 @@ Configure DB via env vars or a mounted `application.yml` volume as needed.
 
 ## Next steps
 
-- Add Spring Boot Actuator (health, metrics) and Micrometer timers on service methods.
 - Add OpenTelemetry tracing for KMS and JDBC.
 - Extract AES-GCM operations into a dedicated component with focused unit tests.
 - Integration tests for deterministic tokenization and error mapping.
