@@ -9,12 +9,18 @@ Authentication: none (local/dev). Add auth at the gateway or via filters if need
 - Deterministic behavior: Same PAN yields the same token. Tokens always start with `9` and are 16 digits.
 - Validation: Requests failing validation return HTTP 400 with a field-to-message map.
 - Errors: Non-validation errors return `{ "error": "..." }` with an appropriate status code.
-- Headers: POST returns 201 Created with a Location header pointing to the detokenize endpoint.
+- Headers: All endpoints require `source` and `correlationId` headers for tracing. Response headers echo these values back.
+- Location: POST returns 201 Created with a Location header pointing to the detokenize endpoint.
 
 ## Endpoints
 
 ### POST /api/tokenize
 Tokenizes a 16-digit credit card number.
+
+Request headers (required)
+- `source`: string, identifies the calling system or application
+- `correlationId`: string, unique identifier for request tracing and correlation
+- `Content-Type`: application/json
 
 Request body
 ```json
@@ -28,7 +34,10 @@ Constraints
 
 Responses
 - 201 Created
-  - Headers: `Location: /api/detokenize?token=9xxxxxxxxxxxxxxx`
+  - Headers: 
+    - `Location: /api/detokenize?token=9xxxxxxxxxxxxxxx`
+    - `source`: echoed from request
+    - `correlationId`: echoed from request
   - Body:
     ```json
     {
@@ -38,7 +47,9 @@ Responses
 - 400 Bad Request (validation)
   ```json
   {
-    "ccNumber": "ccNumber must be exactly 16 digits"
+    "ccNumber": "ccNumber must be exactly 16 digits",
+    "source": "source header must not be blank",
+    "correlationId": "correlationId header must not be blank"
   }
   ```
 - 500 Internal Server Error
@@ -53,18 +64,37 @@ Notes
 ### GET /api/detokenize
 Detokenizes a token back to the original PAN.
 
+Request headers (required)
+- `source`: string, identifies the calling system or application  
+- `correlationId`: string, unique identifier for request tracing and correlation
+
 Query params
 - `token` (string, required): 16-digit token beginning with `9`.
 
 Example
 ```
 GET /api/detokenize?token=9xxxxxxxxxxxxxxx
+Headers:
+  source: mobile-app
+  correlationId: abc123-def456-ghi789
 ```
 
 Responses
 - 200 OK
+  - Headers:
+    - `source`: echoed from request
+    - `correlationId`: echoed from request
+  - Body:
+    ```json
+    { "ccNumber": "4111111111111111" }
+    ```
+- 400 Bad Request (validation)
   ```json
-  { "ccNumber": "4111111111111111" }
+  {
+    "source": "source header must not be blank",
+    "correlationId": "correlationId header must not be blank", 
+    "token": "Token must not be blank"
+  }
   ```
 - 404 Not Found
   ```json

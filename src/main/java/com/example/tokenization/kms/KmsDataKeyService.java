@@ -1,8 +1,8 @@
 package com.example.tokenization.kms;
 
 import com.example.tokenization.config.AwsKmsConfig;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.kms.KmsClient;
@@ -25,13 +25,11 @@ import java.util.Arrays;
  */
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class KmsDataKeyService {
 
-    @Autowired
-    private KmsClient kmsClient;
-
-    @Autowired
-    private AwsKmsConfig awsKmsConfig;
+    private final KmsClient kmsClient;
+    private final AwsKmsConfig awsKmsConfig;
 
     /**
      * Generates a new AES-256 data key using the configured KMS key.

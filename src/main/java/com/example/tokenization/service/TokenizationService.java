@@ -5,8 +5,8 @@ import com.example.tokenization.entity.CardToken;
 import com.example.tokenization.repository.CardTokenRepository;
 import com.example.tokenization.exception.TokenNotFoundException;
 import com.example.tokenization.exception.TokenizationException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.example.tokenization.crypto.TokenDerivationService;
 import software.amazon.awssdk.core.SdkBytes;
@@ -26,41 +26,35 @@ import java.util.Optional;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class TokenizationService {
 
-    @Autowired
-    private KmsClient kmsClient;
-
-    @Autowired
-    private AwsKmsConfig awsKmsConfig;
-
-    @Autowired
-    private CardTokenRepository repository;
+    private final KmsClient kmsClient;
+    private final AwsKmsConfig awsKmsConfig;
+    private final CardTokenRepository repository;
+    private final TokenDerivationService tokenDerivationService;
 
     private static final int IV_SIZE = 12;
     private static final int GCM_TAG_BITS = 128;
     private static final int MAX_RETRY = 10;
-    
-    @Autowired
-    private TokenDerivationService tokenDerivationService;
 
     /**
-     * Tokenizes the provided PAN, generating or reusing a deterministic token.
+     * Tokenizes the provided ccNumber, generating or reusing a deterministic token.
      *
      * Observability:
-     * - Logs are structured (JSON) and never include full PANs; only last 4 digits are emitted.
+     * - Logs are structured (JSON) and never include full CC numbers; only last 4 digits are emitted.
      * - Failures are logged with stack traces and wrapped in TokenizationException for consistent 500 mapping.
      * - Consider adding Micrometer @Timed or manual timers to track latency and success/error counts.
      * - If you propagate correlation IDs, populate MDC (e.g., MDC.put("traceId", ...)) in a web filter.
      */
     @Transactional
-    public String tokenize(String pan) {
+    public String tokenize(String ccNumber) {
         try {
-            String last4 = last4(pan);
+            String last4 = last4(ccNumber);
             log.info("Tokenize request received for CC ending {}", last4);
-            // Deterministic lookup by HMAC of PAN
-            String panHash = tokenDerivationService.computePanHash(pan);
-            Optional<CardToken> existingByHash = repository.findByPanHash(panHash);
+            // Deterministic lookup by HMAC of ccNumber
+            String ccNumberHash = tokenDerivationService.computePanHash(ccNumber);
+            Optional<CardToken> existingByHash = repository.findByPanHash(ccNumberHash);
             if (existingByHash.isPresent()) {
                 log.info("Returning existing token for CC ending {}", last4);
                 return existingByHash.get().getToken();
@@ -85,17 +79,17 @@ public class TokenizationService {
 
                     Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
                     cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(plainDataKey, "AES"), new GCMParameterSpec(GCM_TAG_BITS, iv));
-                    byte[] ciphertext = cipher.doFinal(pan.getBytes(StandardCharsets.UTF_8));
+                    byte[] ciphertext = cipher.doFinal(ccNumber.getBytes(StandardCharsets.UTF_8));
 
-                    // Deterministic token from panHash (with counter to resolve rare collisions)
+                    // Deterministic token from ccNumberHash (with counter to resolve rare collisions)
                     int counter = 0;
                     String token;
                     while (true) {
-                        token = tokenDerivationService.deriveTokenFromHash(panHash, counter);
+                        token = tokenDerivationService.deriveTokenFromHash(ccNumberHash, counter);
                         Optional<CardToken> collision = repository.findByToken(token);
                         if (collision.isPresent()) {
-                            if (panHash.equals(collision.get().getPanHash())) {
-                                log.warn("Duplicate creation for same PAN hash; reusing token for CC ending {}", last4);
+                            if (ccNumberHash.equals(collision.get().getPanHash())) {
+                                log.warn("Duplicate creation for same ccNumber hash; reusing token for CC ending {}", last4);
                                 return collision.get().getToken();
                             }
                             if (counter++ >= MAX_RETRY) {
@@ -109,7 +103,7 @@ public class TokenizationService {
 
                     CardToken ct = new CardToken();
                     ct.setToken(token);
-                    ct.setPanHash(panHash);
+                    ct.setPanHash(ccNumberHash);
                     ct.setCollisionCounter(counter);
                     ct.setEncryptedPan(ciphertext);
                     ct.setNonce(iv);
@@ -126,8 +120,8 @@ public class TokenizationService {
                 Arrays.fill(plainDataKey, (byte)0);
             }
         } catch (Exception ex) {
-        String last4 = last4(pan);
-        // Error path: include exception with stack trace; keep PAN redacted.
+        String last4 = last4(ccNumber);
+        // Error path: include exception with stack trace; keep ccNumber redacted.
         log.error("Tokenization failed for CC ending {}: {}", last4, ex.getMessage(), ex);
             throw new TokenizationException("Tokenization failed", ex);
         }
@@ -151,9 +145,9 @@ public class TokenizationService {
                 Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
                 cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(plainDataKey, "AES"), new GCMParameterSpec(GCM_TAG_BITS, ct.getNonce()));
                 byte[] plaintext = cipher.doFinal(ct.getEncryptedPan());
-                String pan = new String(plaintext, StandardCharsets.UTF_8);
-                log.info("Detokenization successful for token: {} (CC ending {})", token, last4(pan));
-                return pan;
+                String ccNumber = new String(plaintext, StandardCharsets.UTF_8);
+                log.info("Detokenization successful for token: {} (CC ending {})", token, last4(ccNumber));
+                return ccNumber;
             } finally {
                 Arrays.fill(plainDataKey, (byte)0);
             }

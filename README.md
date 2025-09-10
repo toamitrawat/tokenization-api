@@ -206,7 +206,7 @@ java -jar target/tokenization-service-0.0.1-SNAPSHOT.jar
 ```
 
 Endpoints:
-- POST /api/tokenize?pan=4111111111111111
+- POST /api/tokenize   (JSON body: { "ccNumber": "4111111111111111" })
 - GET  /api/detokenize?token=...
 
 Security:

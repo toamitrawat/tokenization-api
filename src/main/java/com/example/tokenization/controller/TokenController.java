@@ -4,9 +4,9 @@ import com.example.tokenization.dto.DetokenizeResponse;
 import com.example.tokenization.dto.TokenizeRequest;
 import com.example.tokenization.dto.TokenizeResponse;
 import com.example.tokenization.service.TokenizationService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpHeaders;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
@@ -24,10 +24,10 @@ import org.slf4j.MDC;
 @RestController
 @RequestMapping("/api")
 @Validated
+@RequiredArgsConstructor
 public class TokenController {
 
-    @Autowired
-    private TokenizationService service;
+    private final TokenizationService service;
 
     /**
      * Tokenizes a 16-digit credit card number and returns a deterministic token.
@@ -58,10 +58,10 @@ public class TokenController {
     }
 
     /**
-     * Resolves a token back to the original PAN.
+     * Resolves a token back to the original CCnumber.
      *
      * Observability: We treat missing tokens as 404 (via a mapped exception). Successful calls
-     * are logged with masked PAN (last 4). Consider adding Micrometer timers on controller or service
+     * are logged with masked CCnumber (last 4). Consider adding Micrometer timers on controller or service
      * methods to observe latency and error rates.
      */
     @GetMapping("/detokenize")
