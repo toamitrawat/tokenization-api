@@ -94,12 +94,10 @@ Main settings in `src/main/resources/application.yml`:
 	- `aws.profile` (optional): named profile for credentials
 - Tokenization
 	- `tokenization.hmacKeyBase64`: Base64-encoded HMAC key (keep secret; rotate per policy)
-- Flyway
-	- `spring.flyway.enabled=false` (migrations disabled by default)
 
 Schema
 - Initial DDL: `src/main/resources/db/migration/V1__create_card_tokens_table.sql`
-- Entity indices on `TOKEN` and `PAN_HASH` for fast lookups.
+- Entity indices on `TOKEN` and `CC_NUMBER_HASH` for fast lookups.
 
 More details in docs/CONFIGURATION.md
 
@@ -190,7 +188,7 @@ Configure DB via env vars or a mounted `application.yml` volume as needed.
 # Tokenization Service (Java 21, Spring Boot 3.3.2, AWS SDK v2)
 
 This sample demonstrates a tokenization service using AWS KMS (GenerateDataKey / Decrypt) and AES-GCM with envelope encryption.
-It persists tokens and encrypted PANs in Oracle DB via JPA, and uses Flyway for schema management.
+It persists tokens and encrypted credit card numbers in Oracle DB via JPA.
 
 * Update `application.yml` with your Oracle DB credentials and AWS KMS Key ARN.
 * Oracle JDBC driver (ojdbc11) may need to be added to your internal repository or local Maven cache.

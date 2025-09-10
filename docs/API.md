@@ -6,7 +6,7 @@ Content-Type: application/json unless noted.
 Authentication: none (local/dev). Add auth at the gateway or via filters if needed.
 
 ## Conventions
-- Deterministic behavior: Same PAN yields the same token. Tokens always start with `9` and are 16 digits.
+- Deterministic behavior: Same credit card number yields the same token. Tokens always start with `9` and are 16 digits.
 - Validation: Requests failing validation return HTTP 400 with a field-to-message map.
 - Errors: Non-validation errors return `{ "error": "..." }` with an appropriate status code.
 - Headers: All endpoints require `source` and `correlationId` headers for tracing. Response headers echo these values back.
@@ -59,10 +59,10 @@ Responses
 
 Notes
 - Idempotent for the same `ccNumber`: returns the same token if already tokenized.
-- Logs only include last 4 digits; full PANs are never logged or returned.
+- Logs only include last 4 digits; full credit card numbers are never logged or returned.
 
 ### GET /api/detokenize
-Detokenizes a token back to the original PAN.
+Detokenizes a token back to the original credit card number.
 
 Request headers (required)
 - `source`: string, identifies the calling system or application  
@@ -111,7 +111,7 @@ Responses
 
 ## Rate limits & performance
 - Not enforced by service. Consider enforcement at gateway/load balancer.
-- Lookups are indexed by `token` and `panHash`.
+- Lookups are indexed by `token` and `ccNumberHash`.
 
 ## Idempotency
 - Tokenize is deterministic; repeated requests with the same `ccNumber` return the same token.

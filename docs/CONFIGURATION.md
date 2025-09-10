@@ -21,10 +21,7 @@ This service is configured primarily via `src/main/resources/application.yml`. A
 - `aws.profile` (optional): Named AWS credentials profile (e.g., `rolesanywhere`). If omitted, default provider chain applies.
 
 ### Tokenization
-- `tokenization.hmacKeyBase64` (required): Base64-encoded HMAC key used for deterministic tokenization and panHash. Keep secret and rotate per policy.
-
-### Flyway
-- `spring.flyway.enabled`: `false` by default. Enable if you want automatic DB migrations.
+- `tokenization.hmacKeyBase64` (required): Base64-encoded HMAC key used for deterministic tokenization and ccNumberHash. Keep secret and rotate per policy.
 
 ## Example application.yml
 ```yaml
@@ -41,8 +38,6 @@ spring:
     database-platform: org.hibernate.dialect.OracleDialect
     properties:
       hibernate.dialect: org.hibernate.dialect.OracleDialect
-  flyway:
-    enabled: false
 aws:
   kms:
     key-id: arn:aws:kms:ap-south-1:123456789012:key/11111111-2222-3333-4444-555555555555
