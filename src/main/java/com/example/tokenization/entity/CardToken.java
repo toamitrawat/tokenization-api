@@ -6,21 +6,21 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * JPA entity storing encrypted PAN material and its derived token.
+ * JPA entity storing encrypted credit card number material and its derived token.
  *
  * Notes:
- * - PAN is never stored in clear; only encrypted bytes + nonce are saved.
- * - panHash is an HMAC of the PAN used for deterministic lookups.
+ * - Credit card number is never stored in clear; only encrypted bytes + nonce are saved.
+ * - ccNumberHash is an HMAC of the credit card number used for deterministic lookups.
  * - token is unique; collisionCounter records how many increments were needed.
  *
  * Observability notes:
  * - Avoid logging this entity directly to prevent leaking binary fields or PII. Prefer explicit, masked logs.
- * - Indexes on token and panHash support fast lookups; monitor query latencies to validate index efficacy.
+ * - Indexes on token and ccNumberHash support fast lookups; monitor query latencies to validate index efficacy.
  */
 @Entity
 @Table(name = "CARD_TOKENS", indexes = {
     @Index(name = "IDX_TOKEN", columnList = "TOKEN"),
-    @Index(name = "IDX_PAN_HASH", columnList = "PAN_HASH")
+    @Index(name = "IDX_CC_NUMBER_HASH", columnList = "CC_NUMBER_HASH")
 })
 @Getter
 @Setter
@@ -34,8 +34,8 @@ public class CardToken {
     private String token;
 
     @Lob
-    @Column(name = "ENCRYPTED_PAN", nullable = false)
-    private byte[] encryptedPan;
+    @Column(name = "ENCRYPTED_CC_NUMBER", nullable = false)
+    private byte[] encryptedCcNumber;
 
     @Column(name = "NONCE", nullable = false)
     private byte[] nonce;
@@ -55,8 +55,8 @@ public class CardToken {
     @Column(name = "CREATED_AT")
     private OffsetDateTime createdAt;
 
-    @Column(name = "PAN_HASH", length = 64, nullable = false)
-    private String panHash;
+    @Column(name = "CC_NUMBER_HASH", length = 64, nullable = false)
+    private String ccNumberHash;
 
     @Column(name = "COLLISION_COUNTER", nullable = false)
     private int collisionCounter = 0;

@@ -10,5 +10,5 @@ import java.util.Optional;
  */
 public interface CardTokenRepository extends JpaRepository<CardToken, Long> {
     Optional<CardToken> findByToken(String token);
-    Optional<CardToken> findByPanHash(String panHash);
+    Optional<CardToken> findByCcNumberHash(String ccNumberHash);
 }

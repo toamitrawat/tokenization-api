@@ -30,24 +30,24 @@ public class TokenDerivationService {
     private String hmacKeyBase64;
 
     /**
-     * Computes a hex-encoded HMAC-SHA256 of the PAN for deterministic lookups.
+     * Computes a hex-encoded HMAC-SHA256 of the credit card number for deterministic lookups.
      */
-    public String computePanHash(String pan) throws Exception {
+    public String computeCcNumberHash(String ccNumber) throws Exception {
         Mac mac = Mac.getInstance(HMAC_ALGO);
         mac.init(new SecretKeySpec(hmacKey(), HMAC_ALGO));
-        mac.update(pan.getBytes(StandardCharsets.UTF_8));
+        mac.update(ccNumber.getBytes(StandardCharsets.UTF_8));
         byte[] h = mac.doFinal();
         return bytesToHex(h);
     }
 
     /**
-     * Derives a 16-digit token starting with '9' from the hex HMAC of the PAN.
+     * Derives a 16-digit token starting with '9' from the hex HMAC of the credit card number.
      * Adds an optional counter to resolve collisions deterministically.
      */
-    public String deriveTokenFromHash(String panHashHex, int counter) throws Exception {
+    public String deriveTokenFromHash(String ccNumberHashHex, int counter) throws Exception {
         Mac mac = Mac.getInstance(HMAC_ALGO);
         mac.init(new SecretKeySpec(hmacKey(), HMAC_ALGO));
-        mac.update(panHashHex.getBytes(StandardCharsets.UTF_8));
+        mac.update(ccNumberHashHex.getBytes(StandardCharsets.UTF_8));
         if (counter > 0) {
             mac.update((byte) ':');
             mac.update(Integer.toString(counter).getBytes(StandardCharsets.UTF_8));

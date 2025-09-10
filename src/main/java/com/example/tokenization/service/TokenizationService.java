@@ -53,8 +53,8 @@ public class TokenizationService {
             String last4 = last4(ccNumber);
             log.info("Tokenize request received for CC ending {}", last4);
             // Deterministic lookup by HMAC of ccNumber
-            String ccNumberHash = tokenDerivationService.computePanHash(ccNumber);
-            Optional<CardToken> existingByHash = repository.findByPanHash(ccNumberHash);
+            String ccNumberHash = tokenDerivationService.computeCcNumberHash(ccNumber);
+            Optional<CardToken> existingByHash = repository.findByCcNumberHash(ccNumberHash);
             if (existingByHash.isPresent()) {
                 log.info("Returning existing token for CC ending {}", last4);
                 return existingByHash.get().getToken();
@@ -88,7 +88,7 @@ public class TokenizationService {
                         token = tokenDerivationService.deriveTokenFromHash(ccNumberHash, counter);
                         Optional<CardToken> collision = repository.findByToken(token);
                         if (collision.isPresent()) {
-                            if (ccNumberHash.equals(collision.get().getPanHash())) {
+                            if (ccNumberHash.equals(collision.get().getCcNumberHash())) {
                                 log.warn("Duplicate creation for same ccNumber hash; reusing token for CC ending {}", last4);
                                 return collision.get().getToken();
                             }
@@ -103,9 +103,9 @@ public class TokenizationService {
 
                     CardToken ct = new CardToken();
                     ct.setToken(token);
-                    ct.setPanHash(ccNumberHash);
+                    ct.setCcNumberHash(ccNumberHash);
                     ct.setCollisionCounter(counter);
-                    ct.setEncryptedPan(ciphertext);
+                    ct.setEncryptedCcNumber(ciphertext);
                     ct.setNonce(iv);
                     ct.setEncryptedDataKey(encryptedDataKey);
                     ct.setAad(null);
@@ -144,7 +144,7 @@ public class TokenizationService {
             try {
                 Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
                 cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(plainDataKey, "AES"), new GCMParameterSpec(GCM_TAG_BITS, ct.getNonce()));
-                byte[] plaintext = cipher.doFinal(ct.getEncryptedPan());
+                byte[] plaintext = cipher.doFinal(ct.getEncryptedCcNumber());
                 String ccNumber = new String(plaintext, StandardCharsets.UTF_8);
                 log.info("Detokenization successful for token: {} (CC ending {})", token, last4(ccNumber));
                 return ccNumber;
