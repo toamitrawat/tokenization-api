@@ -9,6 +9,19 @@ paths:
   /api/tokenize:
     post:
       summary: Tokenize a credit card number
+      parameters:
+        - in: header
+          name: source
+          required: true
+          schema:
+            type: string
+          description: Identifies the calling system or application
+        - in: header
+          name: correlationId
+          required: true
+          schema:
+            type: string
+          description: Unique identifier for request tracing and correlation
       requestBody:
         required: true
         content:
@@ -21,6 +34,14 @@ paths:
           headers:
             Location:
               description: Detokenize link
+              schema:
+                type: string
+            source:
+              description: Echoed from request
+              schema:
+                type: string
+            correlationId:
+              description: Echoed from request
               schema:
                 type: string
           content:
@@ -41,17 +62,39 @@ paths:
                 $ref: '#/components/schemas/Error'
   /api/detokenize:
     get:
-      summary: Detokenize a token back to PAN
+      summary: Detokenize a token back to credit card number
       parameters:
+        - in: header
+          name: source
+          required: true
+          schema:
+            type: string
+          description: Identifies the calling system or application
+        - in: header
+          name: correlationId
+          required: true
+          schema:
+            type: string
+          description: Unique identifier for request tracing and correlation
         - in: query
           name: token
           required: true
           schema:
             type: string
             pattern: '^9\\d{15}$'
+          description: 16-digit token starting with 9
       responses:
         '200':
           description: OK
+          headers:
+            source:
+              description: Echoed from request
+              schema:
+                type: string
+            correlationId:
+              description: Echoed from request
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -98,5 +141,10 @@ components:
           type: string
     ValidationError:
       type: object
+      description: Field-specific validation error messages
       additionalProperties:
         type: string
+      example:
+        ccNumber: "ccNumber must be exactly 16 digits"
+        source: "source header must not be blank"
+        correlationId: "correlationId header must not be blank"
