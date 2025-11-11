@@ -1,19 +1,23 @@
 package com.example.tokenization.kms;
 
-import com.example.tokenization.config.AwsKmsConfig;
-import lombok.RequiredArgsConstructor;
+// COMMENTED OUT FOR TESTING WITHOUT AWS KMS - UNCOMMENT WHEN KMS IS AVAILABLE
+//import com.example.tokenization.config.AwsKmsConfig;
+//import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-import software.amazon.awssdk.core.SdkBytes;
-import software.amazon.awssdk.services.kms.KmsClient;
-import software.amazon.awssdk.services.kms.model.DecryptRequest;
-import software.amazon.awssdk.services.kms.model.GenerateDataKeyRequest;
-import software.amazon.awssdk.services.kms.model.GenerateDataKeyResponse;
-
-import java.util.Arrays;
+//import org.springframework.stereotype.Service;
+//import software.amazon.awssdk.core.SdkBytes;
+//import software.amazon.awssdk.services.kms.KmsClient;
+//import software.amazon.awssdk.services.kms.model.DecryptRequest;
+//import software.amazon.awssdk.services.kms.model.GenerateDataKeyRequest;
+//import software.amazon.awssdk.services.kms.model.GenerateDataKeyResponse;
+//
+//import java.util.Arrays;
 
 /**
  * Service for managing AWS KMS data key operations.
+ * 
+ * TEMPORARILY DISABLED FOR TESTING WITHOUT AWS KMS
+ * UNCOMMENT ALL CODE WHEN AWS KMS IS AVAILABLE
  * 
  * This service encapsulates:
  * - Generation of new data keys via KMS
@@ -23,11 +27,14 @@ import java.util.Arrays;
  * - Plaintext data keys are zeroed after use
  * - All KMS operations are direct calls (no caching)
  */
-@Service
+// COMMENTED OUT FOR TESTING WITHOUT AWS KMS - UNCOMMENT WHEN KMS IS AVAILABLE
+//@Service
 @Slf4j
-@RequiredArgsConstructor
+//@RequiredArgsConstructor
 public class KmsDataKeyService {
 
+    // COMMENTED OUT FOR TESTING WITHOUT AWS KMS - UNCOMMENT WHEN KMS IS AVAILABLE
+    /*
     private final KmsClient kmsClient;
     private final AwsKmsConfig awsKmsConfig;
 
@@ -36,6 +43,7 @@ public class KmsDataKeyService {
      * 
      * @return GenerateDataKeyResponse containing both plaintext and encrypted data key
      */
+    /*
     public GenerateDataKeyResponse generateDataKey() {
         log.debug("Generating new data key from KMS");
         
@@ -51,6 +59,7 @@ public class KmsDataKeyService {
      * @param encryptedDataKey the encrypted data key bytes
      * @return plaintext data key bytes (caller should zero after use)
      */
+    /*
     public byte[] decryptDataKey(byte[] encryptedDataKey) {
         log.debug("Decrypting data key via KMS");
         
@@ -64,6 +73,7 @@ public class KmsDataKeyService {
     /**
      * Convenience method to get both encrypted and plaintext data key from generation response.
      */
+    /*
     public DataKeyPair generateAndExtractDataKey() {
         GenerateDataKeyResponse response = generateDataKey();
         
@@ -76,6 +86,7 @@ public class KmsDataKeyService {
     /**
      * Simple data class to hold both forms of a data key.
      */
+    /*
     public static class DataKeyPair {
         private final byte[] plainDataKey;
         private final byte[] encryptedDataKey;
@@ -96,10 +107,12 @@ public class KmsDataKeyService {
         /**
          * Zeros the plaintext data key for security.
          */
+        /*
         public void clearPlainDataKey() {
             if (plainDataKey != null) {
                 Arrays.fill(plainDataKey, (byte) 0);
             }
         }
     }
+    */
 }

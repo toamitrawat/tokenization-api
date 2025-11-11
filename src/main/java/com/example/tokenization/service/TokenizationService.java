@@ -1,19 +1,23 @@
 package com.example.tokenization.service;
 
-import com.example.tokenization.config.AwsKmsConfig;
+// COMMENTED OUT FOR TESTING WITHOUT AWS KMS - UNCOMMENT WHEN KMS IS AVAILABLE
+//import com.example.tokenization.config.AwsKmsConfig;
 import com.example.tokenization.entity.CardToken;
 import com.example.tokenization.repository.CardTokenRepository;
 import com.example.tokenization.exception.TokenNotFoundException;
 import com.example.tokenization.exception.TokenizationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import com.example.tokenization.crypto.TokenDerivationService;
-import software.amazon.awssdk.core.SdkBytes;
-import software.amazon.awssdk.services.kms.KmsClient;
-import software.amazon.awssdk.services.kms.model.DecryptRequest;
-import software.amazon.awssdk.services.kms.model.GenerateDataKeyRequest;
-import software.amazon.awssdk.services.kms.model.GenerateDataKeyResponse;
+// COMMENTED OUT FOR TESTING WITHOUT AWS KMS - UNCOMMENT WHEN KMS IS AVAILABLE
+//import software.amazon.awssdk.core.SdkBytes;
+//import software.amazon.awssdk.services.kms.KmsClient;
+//import software.amazon.awssdk.services.kms.model.DecryptRequest;
+//import software.amazon.awssdk.services.kms.model.GenerateDataKeyRequest;
+//import software.amazon.awssdk.services.kms.model.GenerateDataKeyResponse;
+import java.util.Base64;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
@@ -29,10 +33,15 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class TokenizationService {
 
-    private final KmsClient kmsClient;
-    private final AwsKmsConfig awsKmsConfig;
+    // COMMENTED OUT FOR TESTING WITHOUT AWS KMS - UNCOMMENT WHEN KMS IS AVAILABLE
+    //private final KmsClient kmsClient;
+    //private final AwsKmsConfig awsKmsConfig;
     private final CardTokenRepository repository;
     private final TokenDerivationService tokenDerivationService;
+
+    // TEMPORARY: Property-based encryption key for testing without KMS
+    @Value("${tokenization.encryptionKeyBase64}")
+    private String encryptionKeyBase64;
 
     private static final int IV_SIZE = 12;
     private static final int GCM_TAG_BITS = 128;
@@ -60,6 +69,8 @@ public class TokenizationService {
                 return existingByHash.get().getToken();
             }
 
+            // COMMENTED OUT FOR TESTING WITHOUT AWS KMS - UNCOMMENT WHEN KMS IS AVAILABLE
+            /*
             // KMS interaction is a key external dependency; consider timing and tagging these calls for metrics.
             GenerateDataKeyResponse dataKeyResponse = kmsClient.generateDataKey(GenerateDataKeyRequest.builder()
                     .keyId(awsKmsConfig.getKeyId())
@@ -68,6 +79,11 @@ public class TokenizationService {
 
             byte[] plainDataKey = dataKeyResponse.plaintext().asByteArray();
             byte[] encryptedDataKey = dataKeyResponse.ciphertextBlob().asByteArray();
+            */
+
+            // TEMPORARY: Use property-based key for testing without KMS
+            byte[] plainDataKey = Base64.getDecoder().decode(encryptionKeyBase64);
+            byte[] encryptedDataKey = plainDataKey; // Store the same key (not encrypted by KMS)
 
             try {
                 int attempts = 0;
@@ -85,7 +101,7 @@ public class TokenizationService {
                     int counter = 0;
                     String token;
                     while (true) {
-                        token = tokenDerivationService.deriveTokenFromHash(ccNumberHash, counter);
+                        token = tokenDerivationService.deriveTokenFromHash(ccNumberHash, counter, last4);
                         Optional<CardToken> collision = repository.findByToken(token);
                         if (collision.isPresent()) {
                             if (ccNumberHash.equals(collision.get().getCcNumberHash())) {
@@ -135,10 +151,16 @@ public class TokenizationService {
             }
             CardToken ct = opt.get();
 
+            // COMMENTED OUT FOR TESTING WITHOUT AWS KMS - UNCOMMENT WHEN KMS IS AVAILABLE
+            /*
             byte[] encryptedDataKey = ct.getEncryptedDataKey();
             byte[] plainDataKey = kmsClient.decrypt(DecryptRequest.builder()
                     .ciphertextBlob(SdkBytes.fromByteArray(encryptedDataKey))
                     .build()).plaintext().asByteArray();
+            */
+
+            // TEMPORARY: Use property-based key for testing without KMS
+            byte[] plainDataKey = Base64.getDecoder().decode(encryptionKeyBase64);
 
             try {
                 Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");

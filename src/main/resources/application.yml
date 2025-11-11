@@ -24,3 +24,6 @@ server:
 tokenization:
   # Base64-encoded 32-byte HMAC key for deterministic tokenization
   hmacKeyBase64: "uN2gH9JcA3rJq1k1yYt7sN1T2r8Qm4XczE+0Jb9G6Hc="
+  # TEMPORARY: Base64-encoded 32-byte AES key for testing without AWS KMS
+  # REMOVE THIS WHEN AWS KMS IS AVAILABLE - Use KMS-generated keys instead
+  encryptionKeyBase64: "MTIzNDU2Nzg5MGFiY2RlZjEyMzQ1Njc4OTBhYmNkZWY="

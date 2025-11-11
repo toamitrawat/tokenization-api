@@ -1,15 +1,20 @@
 package com.example.tokenization.config;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
+// COMMENTED OUT FOR TESTING WITHOUT AWS KMS - UNCOMMENT WHEN KMS IS AVAILABLE
+//import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
-import software.amazon.awssdk.regions.Region;
-import software.amazon.awssdk.services.kms.KmsClient;
-import software.amazon.awssdk.services.kms.KmsClientBuilder;
+// COMMENTED OUT FOR TESTING WITHOUT AWS KMS - UNCOMMENT WHEN KMS IS AVAILABLE
+//import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
+//import software.amazon.awssdk.regions.Region;
+//import software.amazon.awssdk.services.kms.KmsClient;
+//import software.amazon.awssdk.services.kms.KmsClientBuilder;
 
 /**
  * Configures the AWS KMS client.
+ *
+ * TEMPORARILY DISABLED FOR TESTING WITHOUT AWS KMS
+ * UNCOMMENT ALL CODE WHEN AWS KMS IS AVAILABLE
  *
  * Properties:
  * - aws.kms.key-id: The target CMK/Key ARN used to generate data keys.
@@ -32,9 +37,12 @@ public class AwsKmsConfig {
     @Value("${aws.profile:}")
     private String awsProfile;
 
+    // COMMENTED OUT FOR TESTING WITHOUT AWS KMS - UNCOMMENT WHEN KMS IS AVAILABLE
+    /*
     /**
      * Builds a KmsClient with optional ProfileCredentialsProvider when aws.profile is set.
      */
+    /*
     @Bean
     public KmsClient kmsClient() {
         KmsClientBuilder builder = KmsClient.builder()
@@ -49,6 +57,7 @@ public class AwsKmsConfig {
         }
         return builder.build();
     }
+    */
 
     public String getKeyId() {
         return keyId;

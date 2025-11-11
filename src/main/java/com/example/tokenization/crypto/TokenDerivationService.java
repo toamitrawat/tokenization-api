@@ -42,9 +42,15 @@ public class TokenDerivationService {
 
     /**
      * Derives a 16-digit token starting with '9' from the hex HMAC of the credit card number.
+     * Preserves the last 4 digits of the original credit card number.
      * Adds an optional counter to resolve collisions deterministically.
+     * 
+     * @param ccNumberHashHex The hex-encoded hash of the credit card number
+     * @param counter Collision counter for deterministic retry
+     * @param last4Digits Last 4 digits of the original credit card number to preserve
+     * @return 16-digit token in format: 9 + 11 random digits + last4Digits
      */
-    public String deriveTokenFromHash(String ccNumberHashHex, int counter) throws Exception {
+    public String deriveTokenFromHash(String ccNumberHashHex, int counter, String last4Digits) throws Exception {
         Mac mac = Mac.getInstance(HMAC_ALGO);
         mac.init(new SecretKeySpec(hmacKey(), HMAC_ALGO));
         mac.update(ccNumberHashHex.getBytes(StandardCharsets.UTF_8));
@@ -54,11 +60,11 @@ public class TokenDerivationService {
         }
         byte[] h = mac.doFinal();
         BigInteger bi = new BigInteger(1, h);
-        // First digit forced to '9', derive 15-digit suffix deterministically
-        BigInteger mod = BigInteger.TEN.pow(15);
-        long suffixNum = bi.mod(mod).longValue();
-        String suffix = String.format("%015d", suffixNum);
-        return "9" + suffix;
+        // First digit forced to '9', derive 11-digit middle section, preserve last 4 digits
+        BigInteger mod = BigInteger.TEN.pow(11);
+        long middleNum = bi.mod(mod).longValue();
+        String middle = String.format("%011d", middleNum);
+        return "9" + middle + last4Digits;
     }
 
     /**
