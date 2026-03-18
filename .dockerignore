@@ -1,5 +1,6 @@
-# Build output
-/target
+# Build output — exclude everything except the fat JAR needed by the single-stage Dockerfile
+target/
+!target/tokenization-service-*.jar
 
 # VCS and IDE
 .git
