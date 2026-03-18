@@ -62,18 +62,37 @@ pipeline {
                     string(credentialsId: 'db-password',     variable: 'DB_PASSWORD'),
                     string(credentialsId: 'hmac-key-base64', variable: 'HMAC_KEY')
                 ]) {
-                    sh """
-                        helm upgrade --install ${HELM_RELEASE} ${HELM_CHART} \
-                          --namespace ${NAMESPACE} \
-                          --create-namespace \
-                          --set image.tag=${IMAGE_TAG} \
-                          --set secrets.dbUsername="${DB_USERNAME}" \
-                          --set secrets.dbPassword="${DB_PASSWORD}" \
-                          --set secrets.hmacKeyBase64="${HMAC_KEY}" \
-                          --atomic \
-                          --wait \
-                          --timeout 180s
-                    """
+                    script {
+                        try {
+                            sh """
+                                helm upgrade --install ${HELM_RELEASE} ${HELM_CHART} \
+                                  --namespace ${NAMESPACE} \
+                                  --create-namespace \
+                                  --set image.tag=${IMAGE_TAG} \
+                                  --set secrets.dbUsername="${DB_USERNAME}" \
+                                  --set secrets.dbPassword="${DB_PASSWORD}" \
+                                  --set secrets.hmacKeyBase64="${HMAC_KEY}" \
+                                  --atomic \
+                                  --wait \
+                                  --timeout 180s
+                            """
+                        } catch (err) {
+                            // Capture diagnostics while pod still exists (before --atomic deletes it)
+                            sh """
+                                echo '=== Pod describe at failure ==='
+                                kubectl describe pods -n ${NAMESPACE} \
+                                  -l app.kubernetes.io/name=${IMAGE_NAME} || true
+                                echo '=== Pod logs at failure ==='
+                                kubectl logs -n ${NAMESPACE} \
+                                  -l app.kubernetes.io/name=${IMAGE_NAME} \
+                                  --tail=200 || true
+                                echo '=== Pod events ==='
+                                kubectl get events -n ${NAMESPACE} \
+                                  --sort-by=.lastTimestamp --field-selector type=Warning || true
+                            """
+                            throw err
+                        }
+                    }
                 }
             }
         }
