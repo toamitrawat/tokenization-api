@@ -1,8 +1,8 @@
 spring:
   datasource:
     url: jdbc:oracle:thin:@//localhost:1521/XEPDB1
-    username: amit
-    password: welcome123
+    username: ${SPRING_DATASOURCE_USERNAME:amit}
+    password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: oracle.jdbc.OracleDriver
   jpa:
     hibernate:
@@ -11,11 +11,14 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.OracleDialect
-  
+
 aws:
+  region: ${AWS_REGION:ap-south-1}
+  profile: ${AWS_PROFILE:}
   kms:
-    key-id: arn:aws:kms:ap-south-1:538143631035:key/a7c5a1f1-ce1a-4348-acbe-5c150201cb9b
-  region: ap-south-1
+    key-id: ${AWS_KMS_KEY_ID}
+    api-timeout-ms: 5000
+    connect-timeout-ms: 2000
 
 server:
   port: 8088
@@ -44,11 +47,25 @@ management:
       enabled: true
 
 tokenization:
-  # Base64-encoded 32-byte HMAC key for deterministic tokenization
-  hmacKeyBase64: "uN2gH9JcA3rJq1k1yYt7sN1T2r8Qm4XczE+0Jb9G6Hc="
-  # Short-lived cache for decrypted data keys (to reduce KMS calls).
-  # Keep TTL small and size bounded to limit exposure of plaintext keys in memory.
+  hmacKeyBase64: ${TOKENIZATION_HMAC_KEY_BASE64}
+  max-collision-retries: 10
   kms:
     cache:
-      ttlSeconds: 30   # default TTL for cached plaintext keys
-      maxSize: 100     # max number of cached entries
+      ttl-seconds: 30
+      max-size: 100
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      kms:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+  retry:
+    instances:
+      kms:
+        max-attempts: 3
+        wait-duration: 500ms
+        retry-exceptions:
+          - software.amazon.awssdk.core.exception.SdkServiceException

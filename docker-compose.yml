@@ -4,23 +4,18 @@ services:
     image: tokenization-api:latest
     container_name: tokenization-api
     environment:
-      # Spring overrides for DB - point to existing Oracle container name on kafka-net
       SPRING_DATASOURCE_URL: "jdbc:oracle:thin:@//oracle-xe:1521/XEPDB1"
-      SPRING_DATASOURCE_USERNAME: "amit"
-      SPRING_DATASOURCE_PASSWORD: "Welcome123"
-      # App port
+      SPRING_DATASOURCE_USERNAME: "${DB_USERNAME:-amit}"
+      SPRING_DATASOURCE_PASSWORD: "${DB_PASSWORD}"
       SERVER_PORT: "8088"
-      # Tokenization key (override in real setups!)
-      TOKENIZATION_HMAC_KEY_BASE64: "uN2gH9JcA3rJq1k1yYt7sN1T2r8Qm4XczE+0Jb9G6Hc="
-      # AWS: use default credential chain (resolves ~/.aws/credentials from mounted host dir)
+      TOKENIZATION_HMAC_KEY_BASE64: "${HMAC_KEY_BASE64}"
       AWS_REGION: "${AWS_REGION:-ap-south-1}"
-      AWS_KMS_KEY_ID: "${AWS_KMS_KEY_ID:-arn:aws:kms:ap-south-1:538143631035:key/a7c5a1f1-ce1a-4348-acbe-5c150201cb9b}"
+      AWS_KMS_KEY_ID: "${AWS_KMS_KEY_ID}"
     ports:
       - "8088:8088"
     networks:
       - kafka-net
     volumes:
-      # Mount host AWS credentials so the SDK default credential chain resolves inside the container
       - "~/.aws:/root/.aws:ro"
 
 networks:

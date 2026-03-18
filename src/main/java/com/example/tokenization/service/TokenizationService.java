@@ -1,11 +1,11 @@
 package com.example.tokenization.service;
 
+import com.example.tokenization.config.TokenizationProperties;
 import com.example.tokenization.entity.CardToken;
 import com.example.tokenization.repository.CardTokenRepository;
 import com.example.tokenization.exception.TokenNotFoundException;
 import com.example.tokenization.exception.TokenizationException;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.example.tokenization.crypto.TokenDerivationService;
 import com.example.tokenization.kms.KmsDataKeyService;
@@ -23,34 +23,32 @@ import java.util.Optional;
 @Slf4j
 public class TokenizationService {
 
-    @Autowired
-    private KmsDataKeyService kmsDataKeyService;
-
-    @Autowired
-    private CardTokenRepository repository;
-
     private static final int IV_SIZE = 12;
     private static final int GCM_TAG_BITS = 128;
-    private static final int MAX_RETRY = 10;
-    
-    @Autowired
-    private TokenDerivationService tokenDerivationService;
 
-    /**
-     * Tokenizes the provided PAN, generating or reusing a deterministic token.
-     *
-     * Observability:
-     * - Logs are structured (JSON) and never include full PANs; only last 4 digits are emitted.
-     * - Failures are logged with stack traces and wrapped in TokenizationException for consistent 500 mapping.
-     * - Consider adding Micrometer @Timed or manual timers to track latency and success/error counts.
-     * - If you propagate correlation IDs, populate MDC (e.g., MDC.put("traceId", ...)) in a web filter.
-     */
+    private final KmsDataKeyService kmsDataKeyService;
+    private final CardTokenRepository repository;
+    private final TokenDerivationService tokenDerivationService;
+    private final SecureRandom secureRandom;
+    private final int maxCollisionRetries;
+
+    public TokenizationService(KmsDataKeyService kmsDataKeyService,
+                               CardTokenRepository repository,
+                               TokenDerivationService tokenDerivationService,
+                               TokenizationProperties props) {
+        this.kmsDataKeyService = kmsDataKeyService;
+        this.repository = repository;
+        this.tokenDerivationService = tokenDerivationService;
+        this.secureRandom = new SecureRandom();
+        this.maxCollisionRetries = props.maxCollisionRetries();
+    }
+
     @Transactional
     public String tokenize(String pan) {
         try {
             String last4 = last4(pan);
             log.info("Tokenize request received for CC ending {}", last4);
-            // Deterministic lookup by HMAC of PAN
+
             String panHash = tokenDerivationService.computePanHash(pan);
             Optional<CardToken> existingByHash = repository.findByPanHash(panHash);
             if (existingByHash.isPresent()) {
@@ -58,73 +56,65 @@ public class TokenizationService {
                 return existingByHash.get().getToken();
             }
 
-            // KMS interaction is a key external dependency; consider timing and tagging these calls for metrics.
             KmsDataKeyService.DataKeyPair dataKeyPair = kmsDataKeyService.generateAndExtractDataKey();
             byte[] plainDataKey = dataKeyPair.getPlainDataKey();
             byte[] encryptedDataKey = dataKeyPair.getEncryptedDataKey();
 
             try {
-                int attempts = 0;
-                while (attempts < MAX_RETRY) {
-                    attempts++;
+                byte[] iv = new byte[IV_SIZE];
+                secureRandom.nextBytes(iv);
 
-                    byte[] iv = new byte[IV_SIZE];
-                    new SecureRandom().nextBytes(iv);
+                Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+                cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(plainDataKey, "AES"), new GCMParameterSpec(GCM_TAG_BITS, iv));
+                byte[] ciphertext = cipher.doFinal(pan.getBytes(StandardCharsets.UTF_8));
 
-                    Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-                    cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(plainDataKey, "AES"), new GCMParameterSpec(GCM_TAG_BITS, iv));
-                    byte[] ciphertext = cipher.doFinal(pan.getBytes(StandardCharsets.UTF_8));
-
-                    // Deterministic token from panHash (with counter to resolve rare collisions)
-                    int counter = 0;
-                    String token;
-                    while (true) {
-                        token = tokenDerivationService.deriveTokenFromHash(panHash, counter);
-                        Optional<CardToken> collision = repository.findByToken(token);
-                        if (collision.isPresent()) {
-                            if (panHash.equals(collision.get().getPanHash())) {
-                                log.warn("Duplicate creation for same PAN hash; reusing token for CC ending {}", last4);
-                                return collision.get().getToken();
-                            }
-                            if (counter++ >= MAX_RETRY) {
-                                log.error("Too many token collisions");
-                                throw new TokenizationException("Too many token collisions");
-                            }
-                            continue;
+                int counter = 0;
+                String token;
+                while (true) {
+                    token = tokenDerivationService.deriveTokenFromHash(panHash, counter);
+                    Optional<CardToken> collision = repository.findByToken(token);
+                    if (collision.isPresent()) {
+                        if (panHash.equals(collision.get().getPanHash())) {
+                            log.warn("Duplicate creation for same PAN hash; reusing token for CC ending {}", last4);
+                            return collision.get().getToken();
                         }
-                        break;
+                        if (counter++ >= maxCollisionRetries) {
+                            log.error("Too many token collisions");
+                            throw new TokenizationException("Too many token collisions");
+                        }
+                        continue;
                     }
-
-                    CardToken ct = new CardToken();
-                    ct.setToken(token);
-                    ct.setPanHash(panHash);
-                    ct.setCollisionCounter(counter);
-                    ct.setEncryptedPan(ciphertext);
-                    ct.setNonce(iv);
-                    ct.setEncryptedDataKey(encryptedDataKey);
-                    ct.setAad(null);
-                    repository.save(ct);
-                    // Success path: minimal, PII-safe log line.
-            log.info("Token created successfully for CC ending {}", last4);
-                    return token;
+                    break;
                 }
-                log.error("Too many token collisions");
-                throw new TokenizationException("Too many token collisions");
+
+                CardToken ct = new CardToken();
+                ct.setToken(token);
+                ct.setPanHash(panHash);
+                ct.setCollisionCounter(counter);
+                ct.setEncryptedPan(ciphertext);
+                ct.setNonce(iv);
+                ct.setEncryptedDataKey(encryptedDataKey);
+                ct.setAad(null);
+                repository.save(ct);
+                log.info("Token created successfully for CC ending {}", last4);
+                return token;
             } finally {
                 dataKeyPair.clearPlainDataKey();
             }
+        } catch (TokenizationException ex) {
+            throw ex;
         } catch (Exception ex) {
-        String last4 = last4(pan);
-        // Error path: include exception with stack trace; keep PAN redacted.
-        log.error("Tokenization failed for CC ending {}: {}", last4, ex.getMessage(), ex);
+            String last4 = last4(pan);
+            log.error("Tokenization failed for CC ending {}: {}", last4, ex.getMessage(), ex);
             throw new TokenizationException("Tokenization failed", ex);
         }
     }
 
+    @Transactional(readOnly = true)
     public String detokenize(String token) {
         try {
             Optional<CardToken> opt = repository.findByToken(token);
-            if (!opt.isPresent()) {
+            if (opt.isEmpty()) {
                 log.warn("Token not found: {}", token);
                 throw new TokenNotFoundException("Token not found");
             }
@@ -141,7 +131,7 @@ public class TokenizationService {
                 log.info("Detokenization successful for token: {} (CC ending {})", token, last4(pan));
                 return pan;
             } finally {
-                Arrays.fill(plainDataKey, (byte)0);
+                Arrays.fill(plainDataKey, (byte) 0);
             }
         } catch (TokenNotFoundException ex) {
             throw ex;
@@ -150,8 +140,6 @@ public class TokenizationService {
             throw new TokenizationException("Detokenization failed", ex);
         }
     }
-
-    // derive and hashing moved to TokenDerivationService
 
     private String last4(String cc) {
         if (cc == null || cc.length() < 4) return "****";

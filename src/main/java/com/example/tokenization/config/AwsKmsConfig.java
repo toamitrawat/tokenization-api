@@ -1,56 +1,38 @@
 package com.example.tokenization.config;
 
-import org.springframework.beans.factory.annotation.Value;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
+import software.amazon.awssdk.core.retry.RetryPolicy;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.kms.KmsClient;
 import software.amazon.awssdk.services.kms.KmsClientBuilder;
 
-/**
- * Configures the AWS KMS client.
- *
- * Properties:
- * - aws.kms.key-id: The target CMK/Key ARN used to generate data keys.
- * - aws.region: AWS region string (e.g., ap-south-1).
- * - aws.profile: Optional named profile (e.g., rolesanywhere) for credentials.
- *
- * Observability notes:
- * - You can enable AWS SDK metrics/tracing (e.g., via OpenTelemetry SDK instrumentation) to observe KMS latencies and errors.
- * - Consider configuring retry/backoff and surfacing SDK retries as metrics counters.
- */
+import java.time.Duration;
+
 @Configuration
+@RequiredArgsConstructor
 public class AwsKmsConfig {
 
-    @Value("${aws.kms.key-id}")
-    private String keyId;
+    private final AwsKmsProperties props;
 
-    @Value("${aws.region:us-east-1}")
-    private String awsRegion;
-
-    @Value("${aws.profile:}")
-    private String awsProfile;
-
-    /**
-     * Builds a KmsClient with optional ProfileCredentialsProvider when aws.profile is set.
-     */
     @Bean
     public KmsClient kmsClient() {
         KmsClientBuilder builder = KmsClient.builder()
-                .region(Region.of(awsRegion));
+                .region(Region.of(props.region()))
+                .overrideConfiguration(cfg -> cfg
+                        .apiCallTimeout(Duration.ofMillis(props.kms().apiTimeoutMs()))
+                        .apiCallAttemptTimeout(Duration.ofMillis(props.kms().connectTimeoutMs()))
+                        .retryPolicy(RetryPolicy.builder().numRetries(3).build()));
 
-        if (awsProfile != null && !awsProfile.isBlank()) {
+        if (props.profile() != null && !props.profile().isBlank()) {
             builder = builder.credentialsProvider(
                     ProfileCredentialsProvider.builder()
-                            .profileName(awsProfile)
+                            .profileName(props.profile())
                             .build()
             );
         }
         return builder.build();
-    }
-
-    public String getKeyId() {
-        return keyId;
     }
 }
