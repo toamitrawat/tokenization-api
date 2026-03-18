@@ -8,7 +8,7 @@ pipeline {
         HELM_RELEASE  = 'tokenization-api'
         NAMESPACE     = 'tokenization'
         HELM_CHART    = 'helm/tokenization-api'
-        KUBECONFIG    = '/var/jenkins_home/.kube/config'
+        KUBECONFIG    = '/root/.kube/config'
     }
 
     options {
