@@ -24,9 +24,14 @@ pipeline {
             }
         }
 
-        stage('Build') {
+        stage('Build & Test') {
             steps {
-                sh './mvnw clean package -DskipTests --batch-mode'
+                sh './mvnw clean verify --batch-mode'
+            }
+            post {
+                always {
+                    junit testResults: '**/target/surefire-reports/*.xml', allowEmptyResults: true
+                }
             }
         }
 

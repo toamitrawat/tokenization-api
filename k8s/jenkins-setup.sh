@@ -19,14 +19,31 @@ set -euo pipefail
 
 HELM_VERSION="v3.17.1"
 KUBECTL_VERSION="v1.32.2"
+DOCKER_CLI_VERSION="26.1.4"   # API version 1.45 — satisfies daemon minimum of 1.44
 
-echo "==> [1/7] Starting Jenkins container..."
+echo "==> [1/8] Starting Jenkins container..."
 docker start jenkins
 
-echo "==> [2/7] Waiting for Jenkins to be ready..."
+echo "==> [2/8] Waiting for Jenkins to be ready..."
 sleep 5
 
-echo "==> [3/7] Installing kubectl ${KUBECTL_VERSION} inside Jenkins..."
+echo "==> [3/8] Installing Docker CLI ${DOCKER_CLI_VERSION} inside Jenkins..."
+docker exec --user root jenkins bash -c "
+  set -e
+  WANT=${DOCKER_CLI_VERSION}
+  HAVE=\$(docker version --format '{{.Client.Version}}' 2>/dev/null || echo 'none')
+  if [ \"\$HAVE\" = \"\$WANT\" ]; then
+    echo '    Docker CLI \$HAVE already at target version, skipping.'
+  else
+    echo '    Docker CLI: \$HAVE -> \$WANT'
+    curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-\${WANT}.tgz \
+      | tar -xz -C /usr/local/bin --strip-components=1 docker/docker
+    chmod +x /usr/local/bin/docker
+    echo '    Docker CLI installed: '\$(docker version --format '{{.Client.Version}}' 2>/dev/null)
+  fi
+"
+
+echo "==> [4/8] Installing kubectl ${KUBECTL_VERSION} inside Jenkins..."
 docker exec --user root jenkins bash -c "
   set -e
   WANT=${KUBECTL_VERSION}
@@ -42,7 +59,7 @@ docker exec --user root jenkins bash -c "
   fi
 "
 
-echo "==> [4/7] Installing helm ${HELM_VERSION} inside Jenkins..."
+echo "==> [5/8] Installing helm ${HELM_VERSION} inside Jenkins..."
 docker exec --user root jenkins bash -c "
   set -e
   WANT=${HELM_VERSION}
@@ -58,12 +75,12 @@ docker exec --user root jenkins bash -c "
   fi
 "
 
-echo "==> [5/7] Switching to docker-desktop context and extracting cluster server URL..."
+echo "==> [6/8] Switching to docker-desktop context and extracting cluster server URL..."
 kubectl config use-context docker-desktop
 CLUSTER_SERVER=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
 echo "    Cluster server: ${CLUSTER_SERVER}"
 
-echo "==> [6/7] Generating modified kubeconfig (127.0.0.1 -> host.docker.internal, skip TLS verify)..."
+echo "==> [7/8] Generating modified kubeconfig (127.0.0.1 -> host.docker.internal, skip TLS verify)..."
 # insecure-skip-tls-verify is required because Docker Desktop's API server TLS cert
 # does not include host.docker.internal as a SAN — only localhost and kubernetes aliases.
 # This is safe for local Docker Desktop use only; never use on real clusters.
@@ -83,7 +100,11 @@ echo "${MODIFIED_KUBECONFIG}" | docker exec -i jenkins sh -c "
   echo 'kubeconfig written to '\${HOME}'/.kube/config'
 "
 
-echo "==> [7/7] Testing kubectl and helm access from inside Jenkins container..."
+echo "==> [8/8] Testing docker, kubectl, and helm access from inside Jenkins container..."
+docker exec jenkins docker version --format 'Client API: {{.Client.APIVersion}}' || {
+  echo "WARNING: docker CLI test failed."
+}
+
 docker exec jenkins kubectl get nodes || {
   echo "WARNING: kubectl test failed. Jenkins may still be starting up."
   echo "  Retry manually: docker exec jenkins kubectl get nodes"
