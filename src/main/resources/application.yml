@@ -2,7 +2,7 @@ spring:
   datasource:
     url: jdbc:oracle:thin:@//localhost:1521/XEPDB1
     username: amit
-    password: Welcome123
+    password: welcome123
     driver-class-name: oracle.jdbc.OracleDriver
   jpa:
     hibernate:
@@ -19,6 +19,29 @@ aws:
 
 server:
   port: 8088
+
+management:
+  server:
+    port: 8088
+  endpoints:
+    web:
+      exposure:
+        include: health          # expose ONLY health — never env, info, metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true            # enables /actuator/health/liveness and /readiness
+      show-details: never        # no internals leaked via probe responses
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db   # readiness fails if Oracle is unreachable
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
 
 tokenization:
   # Base64-encoded 32-byte HMAC key for deterministic tokenization

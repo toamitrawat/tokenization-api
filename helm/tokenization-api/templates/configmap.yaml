@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "tokenization-api.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tokenization-api.labels" . | nindent 4 }}
+data:
+  SERVER_PORT: {{ .Values.server.port | quote }}
+  SPRING_DATASOURCE_URL: {{ .Values.datasource.url | quote }}
+  AWS_REGION: {{ .Values.aws.region | quote }}
+  AWS_KMS_KEY_ID: {{ .Values.aws.kmsKeyId | quote }}
+  AWS_SHARED_CREDENTIALS_FILE: "/root/.aws/credentials"
+  TOKENIZATION_KMS_CACHE_TTL_SECONDS: {{ .Values.kmsCache.ttlSeconds | quote }}
+  TOKENIZATION_KMS_CACHE_MAX_SIZE: {{ .Values.kmsCache.maxSize | quote }}

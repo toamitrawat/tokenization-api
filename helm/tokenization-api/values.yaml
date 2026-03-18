@@ -1,0 +1,96 @@
+# Non-sensitive defaults — secrets are injected at deploy time via --set
+# and are NEVER stored here.
+
+replicaCount: 1
+
+image:
+  repository: host.docker.internal:5001/tokenization-api
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets:
+  - name: registry-secret
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+service:
+  type: ClusterIP
+  port: 8088
+
+ingress:
+  enabled: true
+  className: nginx
+  host: tokenization-api.local
+  path: /
+  pathType: Prefix
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    nginx.ingress.kubernetes.io/proxy-buffering: "on"
+
+datasource:
+  url: "jdbc:oracle:thin:@//host.docker.internal:1521/XEPDB1"
+
+aws:
+  region: ap-south-1
+  kmsKeyId: "arn:aws:kms:ap-south-1:538143631035:key/a7c5a1f1-ce1a-4348-acbe-5c150201cb9b"
+
+server:
+  port: 8088
+
+# Plaintext key zeroed after use; cache limits in-memory exposure
+kmsCache:
+  ttlSeconds: 30
+  maxSize: 100
+
+javaOpts: >-
+  -XX:+UseG1GC
+  -XX:MaxGCPauseMillis=200
+  -Xms512m
+  -Xmx768m
+  -XX:+HeapDumpOnOutOfMemoryError
+  -XX:HeapDumpPath=/var/log/heapdumps
+
+probes:
+  liveness:
+    initialDelaySeconds: 60
+    periodSeconds: 15
+    failureThreshold: 5
+  readiness:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    failureThreshold: 3
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 768Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+# Names of pre-existing secrets managed outside this chart
+existingSecrets:
+  appSecret: tokenization-secret
+  awsCredentials: aws-credentials
+
+management:
+  port: 8088
+  liveness:
+    path: /actuator/health/liveness
+  readiness:
+    path: /actuator/health/readiness
+
+# secrets.* keys — DO NOT set values here.
+# Supply at deploy time:
+#   --set secrets.dbUsername=...
+#   --set secrets.dbPassword=...
+#   --set secrets.hmacKeyBase64=...
+secrets: {}

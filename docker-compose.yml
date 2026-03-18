@@ -12,21 +12,16 @@ services:
       SERVER_PORT: "8088"
       # Tokenization key (override in real setups!)
       TOKENIZATION_HMAC_KEY_BASE64: "uN2gH9JcA3rJq1k1yYt7sN1T2r8Qm4XczE+0Jb9G6Hc="
-      # AWS: prefer Roles Anywhere profile; region and key can be overridden via .env
-      AWS_PROFILE: "${AWS_PROFILE:-rolesanywhere}"
+      # AWS: use default credential chain (resolves ~/.aws/credentials from mounted host dir)
       AWS_REGION: "${AWS_REGION:-ap-south-1}"
       AWS_KMS_KEY_ID: "${AWS_KMS_KEY_ID:-arn:aws:kms:ap-south-1:538143631035:key/a7c5a1f1-ce1a-4348-acbe-5c150201cb9b}"
-      AWS_CONFIG_FILE: "/app/aws-config/config"
     ports:
       - "8088:8088"
     networks:
       - kafka-net
     volumes:
-      # Mount Roles Anywhere certificate and private key from repo
-      - "./src/main/resources/certs/client-cert.pem:/aws-ra/client.pem:ro"
-      - "./src/main/resources/certs/onprem-key.pem:/aws-ra/client.key:ro"
-      # Bind minimal AWS config from repo (Option B)
-      - "./docker/aws-config/config:/app/aws-config/config:ro"
+      # Mount host AWS credentials so the SDK default credential chain resolves inside the container
+      - "~/.aws:/root/.aws:ro"
 
 networks:
   kafka-net:

@@ -16,15 +16,11 @@ RUN mvn -q -B -DskipTests clean package
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 
-# ---- Install AWS Roles Anywhere credential helper ----
-# Includes bash and coreutils (timeout) used by healthcheck/entrypoint
-ARG RA_HELPER_VERSION=1.7.1
+# Install bash and coreutils (timeout) used by healthcheck/entrypoint
 RUN apt-get update \
 	 && apt-get install -y --no-install-recommends \
-		 ca-certificates curl bash coreutils \
-	 && rm -rf /var/lib/apt/lists/* \
-	 && curl -fsSL "https://rolesanywhere.amazonaws.com/releases/${RA_HELPER_VERSION}/X86_64/Linux/Amzn2023/aws_signing_helper" -o /usr/local/bin/aws_signing_helper \
-	 && chmod +x /usr/local/bin/aws_signing_helper
+		 bash coreutils \
+	 && rm -rf /var/lib/apt/lists/*
 
 # Copy fat jar from build stage
 COPY --from=build /app/target/tokenization-service-0.0.1-SNAPSHOT.jar /app/app.jar

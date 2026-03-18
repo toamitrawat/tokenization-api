@@ -1,3 +1,0 @@
-basicConstraints=CA:FALSE
-keyUsage=digitalSignature
-subjectAltName=DNS:my-onprem-app

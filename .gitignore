@@ -16,6 +16,9 @@ logs/
 .vscode/
 *.iml
 
+# Claude Code local settings
+.claude/
+
 # Mobile Tools for Java (J2ME)
 .mtj.tmp/
 

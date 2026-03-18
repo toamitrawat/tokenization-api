@@ -1,0 +1,6 @@
+apiVersion: v2
+name: tokenization-api
+description: Deterministic credit card tokenization with AWS KMS envelope encryption
+type: application
+version: 0.1.0
+appVersion: "0.0.1-SNAPSHOT"

@@ -1,0 +1,34 @@
+services:
+  registry:
+    image: registry:2
+    container_name: local-registry
+    ports:
+      - "5001:5000"   # Docker registry API (5001 on host to avoid conflicts)
+    environment:
+      REGISTRY_AUTH: htpasswd
+      REGISTRY_AUTH_HTPASSWD_REALM: "Local Registry"
+      REGISTRY_AUTH_HTPASSWD_PATH: /auth/htpasswd
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+    volumes:
+      - ./htpasswd:/auth/htpasswd:ro
+      - registry_data:/var/lib/registry
+    restart: unless-stopped
+
+  registry-ui:
+    image: joxit/docker-registry-ui:latest
+    container_name: local-registry-ui
+    ports:
+      - "5080:80"     # UI at http://localhost:5080
+    environment:
+      REGISTRY_URL: http://registry:5000
+      REGISTRY_TITLE: "Local Docker Registry"
+      SINGLE_REGISTRY: "true"
+      DELETE_IMAGES: "true"
+      REGISTRY_SECURED: "true"
+      NGINX_PROXY_PASS_URL: http://registry:5000
+    depends_on:
+      - registry
+    restart: unless-stopped
+
+volumes:
+  registry_data:
