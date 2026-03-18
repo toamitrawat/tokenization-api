@@ -1,7 +1,10 @@
-# KMS Data Key Service Architecture
+# KMS Architecture
 
 ## Overview
-The `KmsDataKeyService` encapsulates all AWS KMS operations and provides intelligent caching for better performance and cost optimization.
+
+The `KmsDataKeyService` encapsulates all AWS KMS operations and provides intelligent caching for performance and cost optimisation. It implements envelope encryption: KMS protects the data key, the data key protects the PAN.
+
+---
 
 ## Components
 
@@ -9,57 +12,60 @@ The `KmsDataKeyService` encapsulates all AWS KMS operations and provides intelli
 **Location**: `src/main/java/com/example/tokenization/kms/KmsDataKeyService.java`
 
 **Responsibilities**:
-- Generate new AES-256 data keys from AWS KMS
-- Decrypt encrypted data keys with caching
-- Manage cache keys using Base64-encoded encrypted data keys
-- Provide security-conscious memory management
+- Generate AES-256 data keys from AWS KMS (`kms:GenerateDataKey`)
+- Decrypt encrypted data keys with cache-first lookup (`kms:Decrypt`)
+- Manage cache keys using Base64-encoded encrypted data keys as cache identifiers
+- Zero plaintext key material after use
 
-**Key Methods**:
-- `generateDataKey()`: Creates new data key from KMS
-- `decryptDataKey(byte[])`: Decrypts with caching
-- `generateAndExtractDataKey()`: Convenience method returning `DataKeyPair`
+**Key methods**:
+- `generateAndExtractDataKey()` → `DataKeyPair` — used during tokenization
+- `decryptDataKey(byte[])` → `byte[]` — used during detokenization (cache-first)
 
 ### DataKeyCache
 **Location**: `src/main/java/com/example/tokenization/kms/DataKeyCache.java`
 
-**Features**:
-- Caffeine-based in-memory cache
+- Caffeine in-memory cache, thread-safe
 - Bounded size (default: 100 entries)
-- Time-based expiration (default: 30 seconds)
-- Thread-safe operations
+- Time-based expiration (default: 30 seconds TTL)
+- Returns defensive copies — prevents cache pollution from caller mutations
 
 ### DataKeyPair
-**Inner class**: `KmsDataKeyService.DataKeyPair`
+**Inner class of `KmsDataKeyService`**
 
-**Purpose**:
-- Holds both plaintext and encrypted data key
-- Provides `clearPlainDataKey()` for secure cleanup
-- Immutable after construction
+Holds both the plaintext key and the encrypted key returned by KMS. Call `clearPlainDataKey()` immediately after the plaintext key is no longer needed — it calls `Arrays.fill(key, (byte) 0)`.
+
+---
 
 ## Security Model
 
-### Data Key Generation (Tokenization)
-1. **Always generates unique data keys**: Each PAN gets its own data key from KMS
-2. **No key reuse**: Maximum security through key isolation
-3. **Immediate cleanup**: Plaintext keys zeroed after encryption
+### Tokenization (key generation)
+1. KMS generates a unique AES-256 data key per PAN — no key reuse across PANs
+2. Plaintext key encrypts the PAN via AES-256-GCM with a random 12-byte nonce
+3. Plaintext key zeroed from memory immediately after encryption
+4. Encrypted data key and ciphertext persisted to `CARD_TOKENS`
 
-### Data Key Decryption (Detokenization)
-1. **Cache-first approach**: Check cache before KMS call
-2. **Copy protection**: Returns copies to prevent cache pollution
-3. **Bounded exposure**: Short TTL and size limits
-4. **Secure cleanup**: Caller responsible for zeroing returned keys
+### Detokenization (key decryption)
+1. Check cache using Base64(encryptedDataKey) as cache key
+2. Cache hit → return copy of cached plaintext key (~1–5ms, no KMS charge)
+3. Cache miss → KMS decrypt → cache result → return copy (~50–200ms, KMS charge)
+4. Caller responsible for zeroing the returned key after use
 
-## Performance Characteristics
+### AWS Authentication
+In Kubernetes, the `aws-credentials` secret is mounted at `/root/.aws/credentials`. The AWS SDK default credential chain reads this file. For local development, the default provider chain (env vars, `~/.aws/credentials`) applies.
 
-### Cache Hit Scenario
-- **Latency**: ~1-5ms (in-memory lookup)
-- **Cost**: No KMS charges
-- **Use case**: Recent detokenizations
+---
 
-### Cache Miss Scenario
-- **Latency**: ~50-200ms (KMS decrypt call)
-- **Cost**: Standard KMS decrypt charges
-- **Side effect**: Populates cache for future hits
+## Performance
+
+| Scenario | Latency | KMS Cost |
+|---|---|---|
+| Cache hit | ~1–5ms | None |
+| Cache miss | ~50–200ms | Standard decrypt charge |
+
+**Without cache**: every detokenization = 1 KMS call.
+**With cache**: repeated detokenizations of recently used tokens skip KMS entirely.
+
+---
 
 ## Configuration
 
@@ -67,48 +73,28 @@ The `KmsDataKeyService` encapsulates all AWS KMS operations and provides intelli
 tokenization:
   kms:
     cache:
-      maxSize: 100        # Tune based on memory constraints
-      ttlSeconds: 30      # Balance security vs performance
+      maxSize: 100       # tune based on memory and concurrency
+      ttlSeconds: 30     # balance security vs KMS cost
 ```
 
-### Tuning Guidelines
-- **High volume**: Increase `maxSize` (e.g., 500-1000)
-- **Security focused**: Decrease `ttlSeconds` (e.g., 10-15)
-- **Cost optimization**: Increase `ttlSeconds` (e.g., 60-300)
+**Tuning guidelines**:
+- High volume → increase `maxSize` (e.g., 500–1000)
+- Security-focused → decrease `ttlSeconds` (e.g., 10–15s)
+- Cost-optimised → increase `ttlSeconds` (e.g., 60–300s)
 
-## Integration Points
+---
 
-### TokenizationService Changes
-- **Before**: Direct KMS client usage
-- **After**: Uses `KmsDataKeyService` abstraction
-- **Benefits**: Cleaner separation of concerns, easier testing
+## Logging
 
-### Logging
-- **Cache hits/misses**: Logged at DEBUG level
-- **Cache keys**: Only first 10 characters logged (truncated for security)
-- **No plaintext keys**: Never logged in any form
+- Cache hits/misses logged at DEBUG level
+- Only first 10 chars of cache key logged (truncated)
+- Plaintext keys never logged in any form
 
-## Migration Notes
-
-### Backward Compatibility
-- **Database schema**: No changes required
-- **API contracts**: Unchanged
-- **Existing tokens**: Fully compatible
-
-### Monitoring Recommendations
-- Monitor cache hit rates via application metrics
-- Track KMS API call frequency and costs
-- Alert on cache memory usage if needed
+---
 
 ## Future Enhancements
 
-### Potential Optimizations
-1. **Metrics integration**: Expose cache statistics via Micrometer
-2. **Background refresh**: Proactively refresh near-expired entries
-3. **Distributed caching**: Redis/Hazelcast for multi-instance deployments
-4. **Key rotation**: Handle KMS key rotation scenarios
-
-### Alternative Patterns
-1. **Data key pooling**: Pre-generate and pool data keys
-2. **Hierarchical keys**: Derive data keys from master keys
-3. **Time-based key rotation**: Automatic key rotation policies
+1. **Micrometer metrics** — expose cache hit rate, miss rate, KMS call latency via `/actuator/metrics`
+2. **Distributed caching** — Redis/Hazelcast for multi-replica deployments (currently per-pod cache)
+3. **Background refresh** — proactively refresh near-expired entries to avoid cold misses
+4. **KMS key rotation** — handle re-encryption on CMK rotation events

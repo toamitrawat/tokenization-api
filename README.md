@@ -1,323 +1,281 @@
-# tokenization-api
+# Tokenization API
 
-Deterministic credit-card tokenization API built with Spring Boot. It generates a stable 16-digit token (always starting with `9`) for a given 16-digit card number and stores encrypted PAN data with AWS KMS-backed envelope encryption.
+Deterministic credit-card tokenization API built with Spring Boot 3 / Java 21. Generates a stable 16-digit token (always starting with `9`) for a given 16-digit card number and stores encrypted PAN data with AWS KMS-backed envelope encryption.
 
-- Deterministic tokens: same PAN → same token (prefix `9`), with collision handling.
-- Security: PAN is encrypted with AES-GCM; data keys are generated and protected by AWS KMS.
-- Persistence: Oracle via Spring Data JPA; deterministic lookups by HMAC-SHA256 panHash.
-- Robustness: Validation, structured JSON logging, and clear HTTP semantics.
+- **Deterministic tokens**: same PAN → same token (prefix `9`), with collision handling
+- **Envelope encryption**: PAN encrypted with AES-256-GCM; data keys generated and protected by AWS KMS
+- **Persistence**: Oracle XE via Spring Data JPA; deterministic lookups by HMAC-SHA256 `panHash`
+- **Production-ready**: Spring Actuator health probes, structured JSON logging, Helm chart, Jenkins CI/CD
 
-Contents
-- Overview
-- Architecture
-- API
-- Configuration
-- Build & Run
-- Docker (example)
-- Logging & Observability
-- Error handling
-- Security considerations
-- Troubleshooting
-- Next steps
+## Contents
 
-## Overview
+- [Architecture](#architecture)
+- [API](#api)
+- [Health Endpoints](#health-endpoints)
+- [Build & Run](#build--run)
+- [Docker Compose](#docker-compose)
+- [Kubernetes / Helm](#kubernetes--helm)
+- [CI/CD (Jenkins)](#cicd-jenkins)
+- [Configuration](#configuration)
+- [Database Schema](#database-schema)
+- [Logging & Observability](#logging--observability)
+- [Error Handling](#error-handling)
+- [Security Considerations](#security-considerations)
+- [Troubleshooting](#troubleshooting)
 
-This service provides two endpoints:
-- POST /api/tokenize: Accepts a 16-digit `ccNumber` and returns a token (`9` + 15 digits). If the PAN was tokenized before, the same token is returned.
-- GET /api/detokenize: Accepts a token and returns the original `ccNumber`.
-
-Determinism is achieved using an HMAC-SHA256-based panHash for lookups and token derivation. The PAN itself is never stored in clear text; it’s encrypted using an AES-256 data key generated via AWS KMS (envelope encryption). The encrypted data key and IV (nonce) are stored alongside the ciphertext.
+---
 
 ## Architecture
 
-- Spring Boot 3, Java 21
-- Spring Web (REST), Spring Data JPA (Oracle, Hibernate 6)
-- AWS SDK v2 (KMS)
-- Validation (Jakarta), Logging (Logback + logstash JSON encoder)
+**Stack**: Spring Boot 3.3.2 · Java 21 · Spring Data JPA · Oracle XE · AWS SDK v2 (KMS) · Caffeine cache
 
-Key components
-- `TokenizationService`: Orchestrates deterministic tokenization, AES-GCM encrypt/decrypt, persistence, logging.
-- `KmsDataKeyService`: Manages AWS KMS operations with caching - generates new data keys and decrypts existing ones.
-- `DataKeyCache`: Short-lived cache for decrypted data keys to reduce KMS calls (bounded size and TTL).
-- `TokenDerivationService`: HMAC-SHA256 panHash + token derivation (tokens start with `9`).
-- `CardToken` entity: Stores token, panHash, encrypted PAN, nonce, encrypted data key, collision counter.
-- `TokenController`: REST API with request/response DTOs and appropriate status codes.
-- `GlobalExceptionHandler`: Maps errors to JSON with HTTP status codes.
-- `AwsKmsConfig`: Builds the KMS client; supports optional named AWS profile.
+**Key components**:
+| Component | Responsibility |
+|---|---|
+| `TokenController` | REST endpoints; enforces `source` + `correlationId` headers; populates MDC |
+| `TokenizationService` | Orchestrates tokenize/detokenize; `@Transactional`; logs masked PAN only |
+| `KmsDataKeyService` | AWS KMS operations with Caffeine-backed data key cache (TTL 30s, max 100) |
+| `TokenDerivationService` | HMAC-SHA256 panHash + 16-digit token derivation |
+| `CardToken` | JPA entity → `CARD_TOKENS` table |
+| `GlobalExceptionHandler` | `@RestControllerAdvice`; maps to 400/404/500 |
 
-Data flow (tokenize)
-1) Validate input (16 digits).
-2) Compute HMAC panHash from PAN; lookup existing token by panHash.
-3) If not found: KmsDataKeyService generates new data key from KMS → AES-GCM encrypt PAN → generate deterministic token from panHash (+ collision counter if needed) → persist.
-4) Return token with 201 Created.
+**Tokenize flow**:
+1. Validate input (exactly 16 digits)
+2. Compute HMAC `panHash`; look up existing token — return it if found
+3. KMS generates AES-256 data key → AES-256-GCM encrypt PAN → derive deterministic token → persist
+4. Return 201 + `Location` header
 
-Data flow (detokenize)
-1) Lookup by token.
-2) KmsDataKeyService decrypts data key (with caching) → AES-GCM decrypt PAN → return PAN with 200 OK.
+**Detokenize flow**:
+1. Look up by token
+2. KMS decrypts data key (cache-first) → AES-GCM decrypt → return PAN
+
+---
 
 ## API
 
-See docs/API.md for full details and examples.
+See [docs/API.md](docs/API.md) for full reference.
 
-Quick reference
-- POST /api/tokenize
-	- Request JSON: { "ccNumber": "1234567812345678" }
-	- Response 201: { "token": "9xxxxxxxxxxxxxxx" }, Location: /api/detokenize?token=...
-- GET /api/detokenize?token=9...
-	- Response 200: { "ccNumber": "1234567812345678" }
+**Required headers on every request**: `source` and `correlationId`
 
-PowerShell curl examples
+**Quick reference**:
 
-```powershell
-curl -X POST 'http://localhost:8088/api/tokenize' `
-	-H 'Content-Type: application/json' `
-	-d '{"ccNumber":"4111111111111111"}'
+```bash
+# Tokenize
+curl -X POST http://tokenization-api.local/api/tokenize \
+  -H "Content-Type: application/json" \
+  -H "source: my-service" \
+  -H "correlationId: req-001" \
+  -d '{"ccNumber":"4111111111111111"}'
+# → 201  {"token":"9142960579605051"}
 
-curl -X GET 'http://localhost:8088/api/detokenize?token=9XXXXXXXXXXXXXXXX'
+# Detokenize
+curl "http://tokenization-api.local/api/detokenize?token=9142960579605051" \
+  -H "source: my-service" \
+  -H "correlationId: req-002"
+# → 200  {"ccNumber":"4111111111111111"}
 ```
 
-Validation
-- `ccNumber` must be exactly 16 digits; otherwise HTTP 400 with a field error map.
+---
 
-## Configuration
+## Health Endpoints
 
-Main settings in `src/main/resources/application.yml`:
+Spring Actuator exposes liveness and readiness probes at port 8088:
 
-- Server
-	- `server.port`: default 8088.
-- Database (Oracle)
-	- `spring.datasource.url`, `spring.datasource.username`, `spring.datasource.password`
-	- `spring.jpa.hibernate.ddl-auto=none`
-	- `spring.jpa.database-platform=org.hibernate.dialect.OracleDialect`
-	- `spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.OracleDialect` (explicit safeguard)
-- AWS KMS
-	- `aws.kms.key-id`: required KeyId/ARN
-	- `aws.region`: e.g., ap-south-1
-	- `aws.profile` (optional): named profile for credentials
-- Tokenization
-	- `tokenization.hmacKeyBase64`: Base64-encoded HMAC key (keep secret; rotate per policy)
-	- `tokenization.kms.cache.maxSize`: Maximum cached data keys (default: 100)
-	- `tokenization.kms.cache.ttlSeconds`: Cache TTL in seconds (default: 30)
-- Flyway
-	- `spring.flyway.enabled=false` (migrations disabled by default)
+```bash
+GET /actuator/health/liveness   # {"status":"UP"} — JVM alive (no DB check)
+GET /actuator/health/readiness  # {"status":"UP"} — JVM + Oracle reachable
+```
 
-Schema
-- Initial DDL: `src/main/resources/db/migration/V1__create_card_tokens_table.sql`
-- Entity indices on `TOKEN` and `PAN_HASH` for fast lookups.
+Liveness excludes the DB check deliberately — a DB blip should pause traffic (readiness), not restart pods (liveness).
 
-More details in docs/CONFIGURATION.md
+---
 
 ## Build & Run
 
-Prereqs: Java 21, Maven, Oracle DB reachable, AWS credentials if KMS used.
+**Prerequisites**: Java 21, Oracle XE reachable at `localhost:1521/XEPDB1`, AWS credentials
 
-Build
-```powershell
-mvn clean package -DskipTests
-```
+```bash
+# Build (skip tests)
+./mvnw clean package -DskipTests
 
-Run (executable JAR)
-```powershell
-java -jar target/tokenization-api-*.jar
-```
+# Build with tests
+./mvnw clean verify
 
-Environment overrides
-```powershell
-$env:SERVER_PORT=8088
-$env:AWS_REGION='ap-south-1'
-$env:AWS_PROFILE='rolesanywhere'
-java -jar target/tokenization-api-*.jar
-```
+# Run
+java -jar target/tokenization-service-0.0.1-SNAPSHOT.jar
 
-## Docker (example)
-
-Docker Desktop quick start (compose)
-
-1) Build images and start Oracle XE + app:
-
-```powershell
-docker compose up -d --build
-```
-
-2) Check logs:
-
-```powershell
-docker compose logs -f app
-```
-
-3) Test endpoints:
-
-```powershell
-curl -X POST 'http://localhost:8088/api/tokenize' `
-		-H 'Content-Type: application/json' `
-		-d '{"ccNumber":"4111111111111111"}'
-
-curl -X GET 'http://localhost:8088/api/detokenize?token=9XXXXXXXXXXXXXXXX'
-```
-
-Environment overrides (examples):
-
-```powershell
-docker compose up -d --build `
-	--env-file .env
-```
-
-Or inline per-run overrides in docker-compose.yml under the app service (SPRING_DATASOURCE_URL, AWS_REGION, AWS_KMS_KEY_ID, TOKENIZATION_HMAC_KEY_BASE64, etc.).
-
-Tear down:
-
-```powershell
-docker compose down -v
-```
-
-Standalone Dockerfile build (without compose):
-
-```dockerfile
-FROM eclipse-temurin:21-jre
-ARG JAR_FILE=target/tokenization-service-0.0.1-SNAPSHOT.jar
-COPY ${JAR_FILE} /app.jar
-ENV JAVA_OPTS=""
-EXPOSE 8088
-ENTRYPOINT ["sh","-c","java $JAVA_OPTS -jar /app.jar"]
-```
-
-Build & run
-```powershell
-docker build -t tokenization-api .
-docker run --rm -p 8088:8088 `
-	-e AWS_REGION=ap-south-1 `
-	-e AWS_KMS_KEY_ID=arn:aws:kms:ap-south-1:538143631035:key/a7c5a1f1-ce1a-4348-acbe-5c150201cb9b `
-	-e TOKENIZATION_HMAC_KEY_BASE64="<Base64-Encoded-32-Byte-Key>" `
-	-e SPRING_DATASOURCE_URL=jdbc:oracle:thin:@//host.docker.internal:1521/XEPDB1 `
-	-e SPRING_DATASOURCE_USERNAME=amit `
-	-e SPRING_DATASOURCE_PASSWORD=Welcome123 `
-	-v "$HOME/.aws:/root/.aws:ro" `
-	tokenization-api
-```
-
-Configure DB via env vars or a mounted `application.yml` volume as needed.
-
-## Logging & Observability
-
-- Structured JSON logs via Logback encoder for console and file output (`logs/tokenization-service.json`).
-- Rotation: daily and at 10MB per file; 7 days retained.
-- PII: Only the last 4 digits of PAN are ever logged; never log the full PAN.
-- Correlation IDs: Add a servlet filter to populate MDC (e.g., `traceId`), automatically included in logs.
-- Next: Add Spring Boot Actuator + Micrometer, and optionally OpenTelemetry for traces (KMS + JDBC).
-
-## Error handling
-
-- Validation errors → 400 with `{ field: message }` body.
-- Missing token → 404 `{ "error": "Token not found" }`.
-- Internal failures → 500 `{ "error": "..." }`.
-- Consider mapping DB connectivity to 503 (Service Unavailable) as a future enhancement.
-
-## KMS Data Key Caching
-
-To optimize performance and reduce KMS costs, the service implements intelligent data key caching:
-
-### How it works
-- **Cache scope**: Decrypted data keys are cached using their Base64-encoded encrypted data key as the cache key
-- **Cache behavior**: 
-  - **Hit**: Returns cached plaintext data key (avoids KMS decrypt call)
-  - **Miss**: Calls KMS decrypt, then caches the result
-- **Security**: Cache has bounded size (100 entries) and short TTL (30 seconds) to limit exposure
-- **Memory safety**: Plaintext keys are zeroed after use
-
-### Configuration
-```yaml
-tokenization:
-  kms:
-    cache:
-      maxSize: 100        # Maximum cached entries
-      ttlSeconds: 30      # Time-to-live in seconds
-```
-
-### Performance impact
-- **Without cache**: Every detokenization = 1 KMS decrypt call (~50-200ms)
-- **With cache**: Repeated detokenizations of recent tokens use cached keys
-- **Cost**: Reduces KMS decrypt API calls and associated charges
-
-### Trade-offs
-- **Security**: Each tokenization still generates unique data keys per PAN (no key reuse)
-- **Performance**: Detokenization becomes much faster for recently used tokens
-- **Memory**: Small, bounded cache footprint with automatic expiration
-
-## Security considerations
-
-- Secrets: Keep `tokenization.hmacKeyBase64` confidential; rotate periodically.
-- Keys: AWS KMS manages data keys; ensure IAM policies restrict access.
-- Crypto: AES/GCM with unique 12-byte IV per encryption; ciphertext and encrypted data key are stored.
-- Caching: Decrypted data keys are cached short-term (30s) with bounded size; plaintext keys zeroed after use.
-- Logging: Never log raw PAN; code logs last 4 only.
-- Validation: Enforced 16-digit PAN input prevents malformed data.
-
-## Troubleshooting
-
-- Oracle dialect errors (Hibernate 6): Ensure `spring.jpa.database-platform` is `org.hibernate.dialect.OracleDialect` and add `spring.jpa.properties.hibernate.dialect` if needed.
-- Windows file locks when packaging: Close running processes; retry `mvn clean package`. Avoid antivirus locks on `target/`.
-- Logback JSON config issues: Use `LoggingEventCompositeJsonEncoder` with `<providers>` for console.
-- KMS credential issues: Set `AWS_REGION` and, if needed, `AWS_PROFILE`; verify local AWS credentials.
-- DB connectivity failures: Check JDBC URL, firewall/VPN, and credentials; consider fail-fast with health checks.
-
-## Next steps
-
-- Add Spring Boot Actuator (health, metrics) and Micrometer timers on service methods.
-- Add OpenTelemetry tracing for KMS and JDBC.
-- Extract AES-GCM operations into a dedicated component with focused unit tests.
-- Integration tests for deterministic tokenization and error mapping.
-
-
-# Tokenization Service (Java 21, Spring Boot 3.3.2, AWS SDK v2)
-
-This sample demonstrates a tokenization service using AWS KMS (GenerateDataKey / Decrypt) and AES-GCM with envelope encryption.
-It persists tokens and encrypted PANs in Oracle DB via JPA, and uses Flyway for schema management.
-
-* Update `application.yml` with your Oracle DB credentials and AWS KMS Key ARN.
-* Oracle JDBC driver (ojdbc11) may need to be added to your internal repository or local Maven cache.
-
-Build:
-```
-mvn -U clean package
-```
-
-Run:
-```
+# With env overrides
+export SPRING_DATASOURCE_URL=jdbc:oracle:thin:@//localhost:1521/XEPDB1
+export AWS_REGION=ap-south-1
 java -jar target/tokenization-service-0.0.1-SNAPSHOT.jar
 ```
 
-Endpoints:
-- POST /api/tokenize?pan=4111111111111111
-- GET  /api/detokenize?token=...
+---
 
-Security:
-- This sample simplifies error handling and security details. Before production, review HKDF key derivation, secure memory handling, AAD usage, logging, rate-limiting, and PCI controls.
+## Docker Compose
 
-## AWS credentials (including Roles Anywhere)
+Runs the API against a local Oracle XE container.
 
-By default, the app uses the AWS default credential chain. You can also specify a named profile (e.g., Roles Anywhere) so the SDK loads credentials from your AWS config/credentials files.
-
-application.yml:
-
-```
-aws:
-	region: us-east-1
-	profile: rolesanywhere
-	kms:
-		key-id: arn:aws:kms:us-east-1:123456789012:key/REPLACE_WITH_YOUR_KEY_ID
-
-tokenization:
-	# Base64-encoded 32-byte HMAC key
-	hmacKeyBase64: ${TOKENIZATION_HMAC_KEY_BASE64:}
+```bash
+# Start (Oracle XE must already be running separately or via compose)
+docker compose up -d --build
+docker compose logs -f app
+docker compose down -v
 ```
 
-Alternatively, set via environment (PowerShell):
+Environment overrides via `.env` file (see `.env.example`).
 
-```
-$env:AWS_PROFILE = "rolesanywhere"
-$env:TOKENIZATION_HMAC_KEY_BASE64 = "<Base64-Encoded-32-Byte-Key>"
+---
+
+## Kubernetes / Helm
+
+Deploys to Docker Desktop Kubernetes as an EKS dry-run using the Helm chart in `helm/tokenization-api/`.
+
+### One-time bootstrap
+
+```bash
+# From Git Bash — set env vars first
+export REGISTRY_USER=admin
+export REGISTRY_PASS=<registry-password>
+export AWS_ACCESS_KEY_ID=<key>
+export AWS_SECRET_ACCESS_KEY=<secret>
+
+bash k8s/bootstrap.sh
 ```
 
-Notes for Roles Anywhere:
-- Ensure your rolesanywhere profile uses a credential process/helper that fetches short-lived credentials.
-- The profile must have KMS permissions: `kms:GenerateDataKey`, `kms:Decrypt` on your key.
+This installs nginx ingress controller, creates the `tokenization` namespace, and creates the required Kubernetes secrets (`registry-secret`, `aws-credentials`).
+
+**Add to Windows hosts file** (Notepad as Administrator → `C:\Windows\System32\drivers\etc\hosts`):
+```
+127.0.0.1  tokenization-api.local
+```
+
+### Start Jenkins
+
+```bash
+bash k8s/jenkins-setup.sh
+```
+
+Starts Jenkins, installs Docker CLI v26.1.4 / kubectl v1.32.2 / helm v3.17.1 inside the container, and injects a Docker Desktop kubeconfig.
+
+### Manual Helm deploy
+
+```bash
+helm upgrade --install tokenization-api helm/tokenization-api \
+  --namespace tokenization \
+  --set image.tag=<tag> \
+  --set secrets.dbUsername=amit \
+  --set secrets.dbPassword=<password> \
+  --set secrets.hmacKeyBase64=<key>
+```
+
+### Verify deployment
+
+```bash
+kubectl get pods -n tokenization -w
+curl http://tokenization-api.local/actuator/health/liveness
+curl http://tokenization-api.local/actuator/health/readiness
+```
+
+---
+
+## CI/CD (Jenkins)
+
+Pipeline defined in `Jenkinsfile` (branch `aws_deploy`):
+
+| Stage | Action |
+|---|---|
+| Checkout | Pull from GitHub |
+| Build & Test | `./mvnw clean verify` + JUnit results |
+| Docker Login | Authenticate to `host.docker.internal:5001` |
+| Docker Build & Push | Single-stage build, tag = `$BUILD_NUMBER` |
+| Deploy | `helm upgrade --install --atomic`; captures pod logs on failure |
+| Verify | `kubectl rollout status` |
+
+**Jenkins credentials** (Manage Jenkins > Credentials > Global > Secret text):
+
+| ID | Value |
+|---|---|
+| `registry-username` | `admin` |
+| `registry-password` | Registry admin password |
+| `db-username` | `amit` |
+| `db-password` | Oracle password |
+| `hmac-key-base64` | Base64 HMAC key |
+
+**Pipeline job setup**: New Item > Pipeline > SCM > Git > branch `aws_deploy` > Script Path: `Jenkinsfile`
+
+---
+
+## Configuration
+
+See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for full reference.
+
+Critical properties in `src/main/resources/application.yml`:
+
+| Property | Description |
+|---|---|
+| `aws.kms.key-id` | KMS CMK ARN |
+| `aws.region` | `ap-south-1` |
+| `tokenization.hmacKeyBase64` | Base64 HMAC signing key — keep secret, rotate per policy |
+| `tokenization.kms.cache.ttlSeconds` | Data key cache TTL (default: 30) |
+| `tokenization.kms.cache.maxSize` | Cache max entries (default: 100) |
+| `management.server.port` | Actuator port (default: 8088) |
+
+---
+
+## Database Schema
+
+Table: `CARD_TOKENS` — `ddl-auto: none`; Flyway disabled by default.
+Migration: `src/main/resources/db/migration/V1__create_card_tokens_table.sql`
+
+| Column | Type | Notes |
+|---|---|---|
+| `TOKEN` | VARCHAR2(64) | Unique, 16-digit token |
+| `PAN_HASH` | VARCHAR2(64) | Unique, HMAC-SHA256 of PAN |
+| `ENCRYPTED_PAN` | BLOB | AES-256-GCM ciphertext |
+| `NONCE` | RAW(12) | AES-GCM IV |
+| `ENCRYPTED_DATA_KEY` | BLOB | KMS-wrapped data key |
+| `COLLISION_COUNTER` | NUMBER | Incremented on token collision |
+
+---
+
+## Logging & Observability
+
+- Structured JSON logs via `logstash-logback-encoder`
+- MDC fields on every request: `source`, `correlationId`
+- Only last 4 digits of PAN ever logged — never the full PAN
+- Health probes available at `/actuator/health/liveness` and `/actuator/health/readiness`
+
+---
+
+## Error Handling
+
+| Scenario | HTTP | Body |
+|---|---|---|
+| Invalid `ccNumber` | 400 | `{"ccNumber":"ccNumber must be exactly 16 digits"}` |
+| Token not found | 404 | `{"error":"Token not found"}` |
+| Internal failure | 500 | `{"error":"Tokenization failed"}` |
+| Missing required header | 400 | Validation error |
+
+---
+
+## Security Considerations
+
+- Secrets (`hmacKeyBase64`, DB password) supplied via environment variables — never committed
+- Plaintext data keys zeroed via `Arrays.fill()` after use
+- Each PAN gets a unique KMS data key — no key reuse
+- AES-GCM with unique 12-byte nonce per encryption
+- `source` and `correlationId` headers required on all requests
+
+---
+
+## Troubleshooting
+
+| Problem | Cause | Fix |
+|---|---|---|
+| `ORA-00904: PAN_HASH invalid identifier` | Table created with old schema | Drop and recreate using `V1__create_card_tokens_table.sql` |
+| Readiness probe timeout | Oracle unreachable | Ensure `oracle-xe` container is running: `docker start oracle-xe` |
+| `COPY failed: no source files` in Docker | `.dockerignore` blocked JAR | Ensure `!target/tokenization-service-*.jar` is in `.dockerignore` |
+| TLS cert error in Jenkins kubectl | kubeconfig uses wrong server URL | Re-run `k8s/jenkins-setup.sh` |
+| `client version too old` Docker error | Old Docker CLI in Jenkins | Re-run `k8s/jenkins-setup.sh` to install Docker CLI v26.1.4 |
+| KMS credential errors | AWS credentials not mounted | Verify `aws-credentials` secret exists: `kubectl get secret aws-credentials -n tokenization` |

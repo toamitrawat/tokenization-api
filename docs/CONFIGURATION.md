@@ -1,79 +1,138 @@
 # Configuration Guide
 
-This service is configured primarily via `src/main/resources/application.yml`. All properties can be overridden via environment variables or command-line args.
+All properties are in `src/main/resources/application.yml` and can be overridden via environment variables or command-line args.
 
-## Properties
+---
+
+## Properties Reference
 
 ### Server
-- `server.port`: HTTP port (default 8088).
+
+| Property | Default | Description |
+|---|---|---|
+| `server.port` | `8088` | HTTP application port |
 
 ### Database (Oracle)
-- `spring.datasource.url`: JDBC URL, e.g., `jdbc:oracle:thin:@//host:1521/ORCLPDB1`.
-- `spring.datasource.username`: DB user.
-- `spring.datasource.password`: DB password.
-- `spring.jpa.hibernate.ddl-auto`: `none` (recommended in prod).
-- `spring.jpa.database-platform`: `org.hibernate.dialect.OracleDialect` (Hibernate 6).
-- `spring.jpa.properties.hibernate.dialect`: Same as above, explicit safeguard for some environments.
+
+| Property | Default | Description |
+|---|---|---|
+| `spring.datasource.url` | `jdbc:oracle:thin:@//localhost:1521/XEPDB1` | JDBC URL |
+| `spring.datasource.username` | `amit` | DB user |
+| `spring.datasource.password` | — | DB password (supply via env) |
+| `spring.datasource.driver-class-name` | `oracle.jdbc.OracleDriver` | Driver |
+| `spring.jpa.hibernate.ddl-auto` | `none` | Never auto-create schema in prod |
+| `spring.jpa.database-platform` | `org.hibernate.dialect.OracleDialect` | Hibernate 6 dialect |
 
 ### AWS KMS
-- `aws.kms.key-id` (required): KeyId or full ARN of the KMS key for data key generation.
-- `aws.region`: Region string, e.g., `ap-south-1`.
-- `aws.profile` (optional): Named AWS credentials profile (e.g., `rolesanywhere`). If omitted, default provider chain applies.
+
+| Property | Default | Description |
+|---|---|---|
+| `aws.kms.key-id` | — | Required. CMK ARN or key ID |
+| `aws.region` | `ap-south-1` | AWS region |
+| `aws.profile` | — | Optional named credentials profile |
 
 ### Tokenization
-- `tokenization.hmacKeyBase64` (required): Base64-encoded HMAC key used for deterministic tokenization and panHash. Keep secret and rotate per policy.
-- `tokenization.kms.cache.maxSize` (optional): Maximum number of cached decrypted data keys (default: 100).
-- `tokenization.kms.cache.ttlSeconds` (optional): Cache TTL in seconds for decrypted data keys (default: 30).
+
+| Property | Default | Description |
+|---|---|---|
+| `tokenization.hmacKeyBase64` | — | Required. Base64-encoded 32-byte HMAC key. Keep secret; rotate per policy |
+| `tokenization.kms.cache.maxSize` | `100` | Max cached decrypted data keys |
+| `tokenization.kms.cache.ttlSeconds` | `30` | Cache TTL seconds — balance security vs KMS cost |
+
+### Spring Actuator (Health Probes)
+
+| Property | Value | Description |
+|---|---|---|
+| `management.server.port` | `8088` | Actuator port (same as app port) |
+| `management.endpoints.web.exposure.include` | `health` | Only health is exposed |
+| `management.endpoint.health.show-details` | `never` | No internals in probe responses |
+| `management.endpoint.health.probes.enabled` | `true` | Enables `/liveness` and `/readiness` subpaths |
+| Liveness group | `livenessState` | JVM alive — excludes DB |
+| Readiness group | `readinessState,db` | JVM + Oracle must be reachable |
 
 ### Flyway
-- `spring.flyway.enabled`: `false` by default. Enable if you want automatic DB migrations.
 
-## Example application.yml
-```yaml
-server:
-  port: 8088
-spring:
-  datasource:
-    url: jdbc:oracle:thin:@//localhost:1521/ORCLPDB1
-    username: token_user
-    password: secret
-  jpa:
-    hibernate:
-      ddl-auto: none
-    database-platform: org.hibernate.dialect.OracleDialect
-    properties:
-      hibernate.dialect: org.hibernate.dialect.OracleDialect
-  flyway:
-    enabled: false
-aws:
-  kms:
-    key-id: arn:aws:kms:ap-south-1:123456789012:key/11111111-2222-3333-4444-555555555555
-  region: ap-south-1
-  profile: rolesanywhere
-# Base64 for 32 bytes (example only; do not use in prod)
-tokenization:
-  hmacKeyBase64: bXktc3VwZXItc2VjcmV0LWhtYWMta2V5LWFzZS1iYXNlNjQ=
-  kms:
-    cache:
-      maxSize: 100
-      ttlSeconds: 30
+| Property | Default | Description |
+|---|---|---|
+| `spring.flyway.enabled` | `false` | Migrations disabled by default; run DDL manually or enable for automation |
+
+---
+
+## Environment Variable Overrides
+
+Spring Boot maps `SPRING_DATASOURCE_URL` → `spring.datasource.url`, etc.
+
+```bash
+# Database
+export SPRING_DATASOURCE_URL=jdbc:oracle:thin:@//host.docker.internal:1521/XEPDB1
+export SPRING_DATASOURCE_USERNAME=amit
+export SPRING_DATASOURCE_PASSWORD=welcome123
+
+# AWS
+export AWS_REGION=ap-south-1
+export AWS_ACCESS_KEY_ID=...
+export AWS_SECRET_ACCESS_KEY=...
+
+# Tokenization
+export TOKENIZATION_HMACKEYBASE64=<base64-key>
+
+java -jar target/tokenization-service-0.0.1-SNAPSHOT.jar
 ```
 
-## Environment overrides (PowerShell)
-```powershell
-$env:SERVER_PORT=8088
-$env:SPRING_DATASOURCE_URL='jdbc:oracle:thin:@//localhost:1521/ORCLPDB1'
-$env:SPRING_DATASOURCE_USERNAME='token_user'
-$env:SPRING_DATASOURCE_PASSWORD='secret'
-$env:SPRING_JPA_DATABASE_PLATFORM='org.hibernate.dialect.OracleDialect'
-$env:SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT='org.hibernate.dialect.OracleDialect'
-$env:AWS_REGION='ap-south-1'
-$env:AWS_PROFILE='rolesanywhere'
-$env:TOKENIZATION_HMACKEYBASE64='bXktc3VwZXItc2VjcmV0LWhtYWMta2V5LWFzZS1iYXNlNjQ='
-java -jar target/tokenization-api-*.jar
+---
+
+## Kubernetes / Helm Configuration
+
+Helm chart at `helm/tokenization-api/`. Values in `helm/tokenization-api/values.yaml`.
+
+**Secrets** are injected at deploy time via `--set` — never stored in `values.yaml`:
+
+```bash
+helm upgrade --install tokenization-api helm/tokenization-api \
+  --namespace tokenization \
+  --set image.tag=<BUILD_NUMBER> \
+  --set secrets.dbUsername=amit \
+  --set secrets.dbPassword=<password> \
+  --set secrets.hmacKeyBase64=<key>
 ```
 
-## Notes
-- Ensure the Oracle driver is available (managed via Maven).
-- The service requires DB connectivity on startup for JPA.
-- For KMS, verify credentials (`AWS_PROFILE` or default provider chain) and region.
+**Key values defaults**:
+
+| Value | Default | Description |
+|---|---|---|
+| `image.repository` | `host.docker.internal:5001/tokenization-api` | Registry + image name |
+| `image.tag` | `latest` | Always override with build number |
+| `image.pullPolicy` | `IfNotPresent` | Use `Always` if `latest` tag is reused |
+| `datasource.url` | `jdbc:oracle:thin:@//host.docker.internal:1521/XEPDB1` | Oracle via host |
+| `management.port` | `8088` | Actuator probe port |
+| `management.liveness.path` | `/actuator/health/liveness` | Startup + liveness path |
+| `management.readiness.path` | `/actuator/health/readiness` | Readiness path |
+| `probes.liveness.initialDelaySeconds` | `60` | |
+| `probes.readiness.initialDelaySeconds` | `30` | |
+| `ingress.host` | `tokenization-api.local` | Add to hosts file |
+| `existingSecrets.awsCredentials` | `aws-credentials` | K8s secret with `credentials` key |
+| `existingSecrets.appSecret` | `tokenization-secret` | K8s secret with DB + HMAC credentials |
+
+**Pre-existing secrets** (created by `k8s/bootstrap.sh`):
+
+```bash
+# AWS credentials — mounted at /root/.aws/credentials
+kubectl get secret aws-credentials -n tokenization
+
+# App secrets (DB user/pass + HMAC key) — injected as env vars
+kubectl get secret tokenization-secret -n tokenization
+```
+
+---
+
+## JVM Options
+
+Configured via `javaOpts` in `values.yaml` (Kubernetes) or `JAVA_OPTS` env var (local/Docker):
+
+```
+-XX:+UseG1GC -XX:MaxGCPauseMillis=200
+-Xms512m -Xmx768m
+-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/var/log/heapdumps
+```
+
+For Java 21 high-throughput: substitute `-XX:+UseZGC -XX:+ZGenerational`.
